@@ -204,6 +204,7 @@ struct RankReducedSliceOfSlice
          SliceVerificationResult::Success))
       return failure();
 
+    // TODO: combine offsets, sizes, and strides of producer and consumer
     SmallVector<OpFoldResult> offsets = sliceOp.getMixedOffsets();
     SmallVector<OpFoldResult> sizes = sliceOp.getMixedSizes();
     SmallVector<OpFoldResult> strides = sliceOp.getMixedStrides();

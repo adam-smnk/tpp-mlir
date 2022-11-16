@@ -187,4 +187,37 @@ FailureOr<SmallVector<Range>> getLoopsToMaterialize(RewriterBase &rewriter,
 
 } // namespace utils
 
+namespace tpp {
+// Fold two rank reduced tensor.extract_slice operations into one.
+struct RankReducedSliceOfSlice
+    : public OpRewritePattern<tensor::ExtractSliceOp> {
+  using OpRewritePattern<tensor::ExtractSliceOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::ExtractSliceOp sliceOp,
+                                PatternRewriter &rewriter) const override {
+    // The producer of the current ExtractSliceOp should be another
+    // ExtractSliceOp.
+    tensor::ExtractSliceOp producer =
+        sliceOp.getSource().getDefiningOp<tensor::ExtractSliceOp>();
+    if (!producer ||
+        (isRankReducedType(producer.getType(), sliceOp.getResult().getType()) !=
+         SliceVerificationResult::Success))
+      return failure();
+
+    SmallVector<OpFoldResult> offsets = sliceOp.getMixedOffsets();
+    SmallVector<OpFoldResult> sizes = sliceOp.getMixedSizes();
+    SmallVector<OpFoldResult> strides = sliceOp.getMixedStrides();
+
+    rewriter.replaceOpWithNewOp<tensor::ExtractSliceOp>(
+        sliceOp, sliceOp.getType(), producer.getSource(), offsets, sizes,
+        strides);
+    return success();
+  }
+};
+
+void populateTensorSliceFoldingPatterns(RewritePatternSet &patterns) {
+  patterns.add<RankReducedSliceOfSlice>(patterns.getContext());
+}
+} // namespace tpp
+
 } // namespace mlir

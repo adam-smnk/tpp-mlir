@@ -204,14 +204,30 @@ struct RankReducedSliceOfSlice
          SliceVerificationResult::Success))
       return failure();
 
-    // TODO: combine offsets, sizes, and strides of producer and consumer
-    SmallVector<OpFoldResult> offsets = sliceOp.getMixedOffsets();
-    SmallVector<OpFoldResult> sizes = sliceOp.getMixedSizes();
-    SmallVector<OpFoldResult> strides = sliceOp.getMixedStrides();
+    // TODO: combine OpFoldResults
+    if (producer.getMixedSizes() != sliceOp.getMixedSizes())
+      return failure();
+
+    SmallVector<OpFoldResult, 4> prodStrides = producer.getMixedStrides();
+    SmallVector<OpFoldResult, 4> consStrides = sliceOp.getMixedStrides();
+    if (prodStrides.size() != consStrides.size())
+      return failure();
+    SmallVector<OpFoldResult, 4> combinedStrides;
+    for (size_t i = 0; i < consStrides.size(); ++i)
+      combinedStrides.push_back(prodStrides[i] * consStrides[i]);
+
+    SmallVector<OpFoldResult, 4> prodOffsets = producer.getMixedOffsets();
+    SmallVector<OpFoldResult, 4> consOffsets = sliceOp.getMixedOffsets();
+    if (prodOffsets.size() != consOffsets.size())
+      return failure();
+    SmallVector<OpFoldResult, 4> combinedOffsets;
+    for (size_t i = 0; i < consOffsets.size(); ++i)
+      combinedOffsets.push_back(prodOffsets[i] * consStrides[i] +
+                                consOffsets[i]);
 
     rewriter.replaceOpWithNewOp<tensor::ExtractSliceOp>(
-        sliceOp, sliceOp.getType(), producer.getSource(), offsets, sizes,
-        strides);
+        sliceOp, sliceOp.getType(), producer.getSource(), combinedOffsets,
+        sliceOp.getMixedSizes(), combinedStrides);
     return success();
   }
 };

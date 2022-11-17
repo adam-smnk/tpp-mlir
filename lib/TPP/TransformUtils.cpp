@@ -188,7 +188,7 @@ FailureOr<SmallVector<Range>> getLoopsToMaterialize(RewriterBase &rewriter,
 } // namespace utils
 
 namespace tpp {
-// Fold two rank reduced tensor.extract_slice operations into one.
+// Fold two tensor.extract_slice operations into one.
 struct TensorExtractSliceOfSlice
     : public OpRewritePattern<tensor::ExtractSliceOp> {
   using OpRewritePattern<tensor::ExtractSliceOp>::OpRewritePattern;
@@ -208,6 +208,7 @@ struct TensorExtractSliceOfSlice
     AffineExpr s1 = b.getAffineSymbolExpr(1);
     AffineExpr s2 = b.getAffineSymbolExpr(2);
 
+    // Combine the strides of the two slices
     SmallVector<OpFoldResult, 4> prodStrides = producer.getMixedStrides();
     SmallVector<OpFoldResult, 4> consStrides = sliceOp.getMixedStrides();
     // TODO: can the size checks be relaxed?
@@ -219,6 +220,7 @@ struct TensorExtractSliceOfSlice
       combinedStrides.push_back(makeComposedFoldedAffineApply(
           b, loc, s0 * s1, {prodStrides[i], consStrides[i]}));
 
+    // Combine the offsets of the two slices
     SmallVector<OpFoldResult, 4> prodOffsets = producer.getMixedOffsets();
     SmallVector<OpFoldResult, 4> consOffsets = sliceOp.getMixedOffsets();
     if (prodOffsets.size() != consOffsets.size())
@@ -230,6 +232,8 @@ struct TensorExtractSliceOfSlice
           b, loc, s0 * s1 + s2,
           {prodOffsets[i], consStrides[i], consOffsets[i]}));
 
+    // Create a single direct extract slice op mapping:
+    // producer input -> consumer output
     rewriter.replaceOpWithNewOp<tensor::ExtractSliceOp>(
         sliceOp, sliceOp.getType(), producer.getSource(), combinedOffsets,
         sliceOp.getMixedSizes(), combinedStrides);

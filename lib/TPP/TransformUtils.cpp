@@ -189,7 +189,7 @@ FailureOr<SmallVector<Range>> getLoopsToMaterialize(RewriterBase &rewriter,
 
 namespace tpp {
 // Fold two rank reduced tensor.extract_slice operations into one.
-struct RankReducedSliceOfSlice
+struct TensorExtractSliceOfSlice
     : public OpRewritePattern<tensor::ExtractSliceOp> {
   using OpRewritePattern<tensor::ExtractSliceOp>::OpRewritePattern;
 
@@ -199,10 +199,7 @@ struct RankReducedSliceOfSlice
     // ExtractSliceOp.
     tensor::ExtractSliceOp producer =
         sliceOp.getSource().getDefiningOp<tensor::ExtractSliceOp>();
-    // TODO: can this be relaxed?
-    if (!producer ||
-        (isRankReducedType(producer.getType(), sliceOp.getResult().getType()) !=
-         SliceVerificationResult::Success))
+    if (!producer)
       return failure();
 
     auto loc = sliceOp.getLoc();
@@ -241,7 +238,7 @@ struct RankReducedSliceOfSlice
 };
 
 void populateTensorSliceFoldingPatterns(RewritePatternSet &patterns) {
-  patterns.add<RankReducedSliceOfSlice>(patterns.getContext());
+  patterns.add<TensorExtractSliceOfSlice>(patterns.getContext());
 }
 } // namespace tpp
 

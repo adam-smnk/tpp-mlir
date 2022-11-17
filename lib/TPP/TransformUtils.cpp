@@ -199,31 +199,39 @@ struct RankReducedSliceOfSlice
     // ExtractSliceOp.
     tensor::ExtractSliceOp producer =
         sliceOp.getSource().getDefiningOp<tensor::ExtractSliceOp>();
+    // TODO: can this be relaxed?
     if (!producer ||
         (isRankReducedType(producer.getType(), sliceOp.getResult().getType()) !=
          SliceVerificationResult::Success))
       return failure();
 
-    // TODO: combine OpFoldResults
-    if (producer.getMixedSizes() != sliceOp.getMixedSizes())
-      return failure();
+    auto loc = sliceOp.getLoc();
+    ImplicitLocOpBuilder b(loc, rewriter);
+    AffineExpr s0 = b.getAffineSymbolExpr(0);
+    AffineExpr s1 = b.getAffineSymbolExpr(1);
+    AffineExpr s2 = b.getAffineSymbolExpr(2);
 
     SmallVector<OpFoldResult, 4> prodStrides = producer.getMixedStrides();
     SmallVector<OpFoldResult, 4> consStrides = sliceOp.getMixedStrides();
+    // TODO: can the size checks be relaxed?
     if (prodStrides.size() != consStrides.size())
       return failure();
+
     SmallVector<OpFoldResult, 4> combinedStrides;
     for (size_t i = 0; i < consStrides.size(); ++i)
-      combinedStrides.push_back(prodStrides[i] * consStrides[i]);
+      combinedStrides.push_back(makeComposedFoldedAffineApply(
+          b, loc, s0 * s1, {prodStrides[i], consStrides[i]}));
 
     SmallVector<OpFoldResult, 4> prodOffsets = producer.getMixedOffsets();
     SmallVector<OpFoldResult, 4> consOffsets = sliceOp.getMixedOffsets();
     if (prodOffsets.size() != consOffsets.size())
       return failure();
+
     SmallVector<OpFoldResult, 4> combinedOffsets;
     for (size_t i = 0; i < consOffsets.size(); ++i)
-      combinedOffsets.push_back(prodOffsets[i] * consStrides[i] +
-                                consOffsets[i]);
+      combinedOffsets.push_back(makeComposedFoldedAffineApply(
+          b, loc, s0 * s1 + s2,
+          {prodOffsets[i], consStrides[i], consOffsets[i]}));
 
     rewriter.replaceOpWithNewOp<tensor::ExtractSliceOp>(
         sliceOp, sliceOp.getType(), producer.getSource(), combinedOffsets,

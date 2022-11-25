@@ -44,8 +44,6 @@ def Perf_BenchOp : Perf_Op<"bench", [NoTerminator]> {
         $region attr-dict
         `->` type($results)
     }];
-
-    let hasVerifier = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -76,8 +74,6 @@ def Perf_StartTimerOp : Perf_Op<"start_timer", []> {
     let assemblyFormat = [{
         attr-dict `:` type($timer)
     }];
-
-    let hasVerifier = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -111,7 +107,7 @@ def Perf_StopTimerOp : Perf_Op<"stop_timer", []> {
         `:` type($delta)
     }];
 
-    let hasVerifier = 0;
+    let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -144,8 +140,6 @@ def Perf_MeanOp : Perf_Op<"mean", []> {
         `(` $input `:` type($input) `)` attr-dict
         `:` type($mean)
     }];
-
-    let hasVerifier = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -179,8 +173,6 @@ def Perf_StdevOp : Perf_Op<"stdev", []> {
         `(` $input `:` type($input) `,` $mean `:` type($mean) `)` attr-dict
         `:` type($stdev)
     }];
-
-    let hasVerifier = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -217,8 +209,6 @@ def Perf_DoNotOpt : Perf_Op<"do_not_opt", [ConditionallySpeculatable]> {
         return ::mlir::Speculation::NotSpeculatable;
       }
     }];
-
-    let hasVerifier = 0;
 }
 
 #endif // TPP_PERF_OPS

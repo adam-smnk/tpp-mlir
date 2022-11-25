@@ -15,3 +15,19 @@
 
 using namespace mlir;
 using namespace mlir::perf;
+
+LogicalResult StopTimerOp::verify() {
+  auto timerSrc = getTimer().getDefiningOp();
+  if (!timerSrc || !isa<StartTimerOp>(timerSrc))
+    return emitOpError("invalid timer input");
+
+  int numStopTimers = 0;
+  for (auto user : timerSrc->getUsers()) {
+    if (isa<StopTimerOp>(*user))
+      ++numStopTimers;
+  }
+  if (numStopTimers != 1)
+    return emitOpError("timer stopped multiple times");
+
+  return success();
+}

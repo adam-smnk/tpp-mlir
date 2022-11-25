@@ -12,6 +12,8 @@
 include "PerfDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+def PerfTimer : AnyTypeOf<[Index]>;
+
 //===----------------------------------------------------------------------===//
 // BenchOp
 //===----------------------------------------------------------------------===//
@@ -69,7 +71,7 @@ def Perf_StartTimerOp : Perf_Op<"start_timer", []> {
     }];
 
     let arguments = (ins);
-    let results = (outs Index:$timer);
+    let results = (outs PerfTimer:$timer);
 
     let assemblyFormat = [{
         attr-dict `:` type($timer)
@@ -99,7 +101,7 @@ def Perf_StopTimerOp : Perf_Op<"stop_timer", []> {
         ```
     }];
 
-    let arguments = (ins Index:$timer);
+    let arguments = (ins PerfTimer:$timer);
     let results = (outs F64:$delta);
 
     let assemblyFormat = [{

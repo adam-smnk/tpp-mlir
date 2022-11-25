@@ -10,6 +10,7 @@
 #define TPP_PERF_OPS
 
 include "PerfDialect.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // BenchOp
@@ -177,6 +178,44 @@ def Perf_StdevOp : Perf_Op<"stdev", []> {
     let assemblyFormat = [{
         `(` $input `:` type($input) `,` $mean `:` type($mean) `)` attr-dict
         `:` type($stdev)
+    }];
+
+    let hasVerifier = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// DoNotOptOp
+//===----------------------------------------------------------------------===//
+
+def Perf_DoNotOpt : Perf_Op<"do_not_opt", [ConditionallySpeculatable]> {
+    let summary = "Prevent removal of unused values.";
+    let description = [{
+        The `perf.do_not_opt` operation acts as a dummy, not speculatable
+        consumer that prevents removal of unused values and their defining
+        operations by optimization passes.
+
+        Example:
+
+        ```mlir
+
+        %deltas = perf.bench (%n) {
+          %a = arith.addi %b, %c : i64
+          perf.do_not_opt(%a) // make sure that 'addi' is not optimized away
+        } -> memref<?xf64>
+
+        ```
+    }];
+
+    let arguments = (ins AnyType:$input);
+
+    let assemblyFormat = [{
+        `(` $input `)` attr-dict `:` type($input)
+    }];
+
+    let extraClassDeclaration = [{
+      ::mlir::Speculation::Speculatability getSpeculatability() {
+        return ::mlir::Speculation::NotSpeculatable;
+      }
     }];
 
     let hasVerifier = 0;

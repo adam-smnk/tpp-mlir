@@ -1,0 +1,185 @@
+//===- TppOps.td - Tpp dialect ops -------------------------*- tablegen -*-===//
+//
+// This file is licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef TPP_PERF_OPS
+#define TPP_PERF_OPS
+
+include "PerfDialect.td"
+
+//===----------------------------------------------------------------------===//
+// BenchOp
+//===----------------------------------------------------------------------===//
+
+def Perf_BenchOp : Perf_Op<"bench", [NoTerminator]> {
+    let summary = "Benchmark the enclosed code.";
+    let description = [{
+        The `perf.bench` operation generates benchmarking code
+        around the enclosed region.
+        The performance results are gathered over the specified
+        number of iterations.
+
+        Example:
+
+        ```mlir
+ 
+        %deltas = perf.bench (%n) {
+          linalg.matmul ins(%A, %B: tensor<4x8xf32>, tensor<8x4xf32>) outs(%C: tensor<4x4xf32>)
+        } -> memref<?xf64>
+        
+        ```
+    }];
+
+    let arguments = (ins Index:$numIters);
+    let results = (outs RankedOrUnrankedMemRefOf<[F64]>:$results);
+    let regions = (region SizedRegion<1>:$region);
+
+    let assemblyFormat = [{
+        `(` $numIters `)`
+        $region attr-dict
+        `->` type($results)
+    }];
+
+    let hasVerifier = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StartTimerOp
+//===----------------------------------------------------------------------===//
+
+def Perf_StartTimerOp : Perf_Op<"start_timer", []> {
+    let summary = "Start a timer.";
+    let description = [{
+        The `perf.start_timer` operation creates a new timer
+        which begins time measurement.
+
+        See "perf.stop_timer" for timer termination.
+
+        Example:
+
+        ```mlir
+ 
+        %t = perf.start_timer : index
+        ... // ops under measurement
+        
+        ```
+    }];
+
+    let arguments = (ins);
+    let results = (outs Index:$timer);
+
+    let assemblyFormat = [{
+        attr-dict `:` type($timer)
+    }];
+
+    let hasVerifier = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StopTimerOp
+//===----------------------------------------------------------------------===//
+
+def Perf_StopTimerOp : Perf_Op<"stop_timer", []> {
+    let summary = "Stops a timer.";
+    let description = [{
+        The `perf.stop_timer` operation stops the specified
+        timer and returns elapsed time delta.
+
+        See "perf.start_timer" for timer creation.
+
+        Example:
+
+        ```mlir
+ 
+        %t = perf.start_timer : index
+        ... // ops under measurement
+        %delta = perf.stop_timer(%t : index) : f64
+        
+        ```
+    }];
+
+    let arguments = (ins Index:$timer);
+    let results = (outs F64:$delta);
+
+    let assemblyFormat = [{
+        `(` $timer `:` type($timer) `)` attr-dict
+        `:` type($delta)
+    }];
+
+    let hasVerifier = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// MeanOp
+//===----------------------------------------------------------------------===//
+
+def Perf_MeanOp : Perf_Op<"mean", []> {
+    let summary = "Compute mean value.";
+    let description = [{
+        The `perf.mean` operation computes mean value of provided
+        time deltas.
+
+        Example:
+
+        ```mlir
+ 
+        %deltas = perf.bench (%n) {
+          ... // benchmarked code
+        } -> memref<?xf64>
+
+        %mean = perf.mean(%deltas : memref<?xf64>) : f64
+        
+        ```
+    }];
+
+    let arguments = (ins RankedOrUnrankedMemRefOf<[F64]>:$input);
+    let results = (outs F64:$mean);
+
+    let assemblyFormat = [{
+        `(` $input `:` type($input) `)` attr-dict
+        `:` type($mean)
+    }];
+
+    let hasVerifier = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StdevOp
+//===----------------------------------------------------------------------===//
+
+def Perf_StdevOp : Perf_Op<"stdev", []> {
+    let summary = "Compute standard deviation.";
+    let description = [{
+        The `perf.mean` operation computes mean value of provided
+        time deltas.
+
+        Example:
+
+        ```mlir
+ 
+        %deltas = perf.bench (%n) {
+          ... // benchmarked code
+        } -> memref<?xf64>
+
+        %mean = perf.mean(%deltas : memref<?xf64>) : f64
+        %stdev = perf.stdev(%deltas : memref<?xf64>, %mean : f64) : f64
+        
+        ```
+    }];
+
+    let arguments = (ins RankedOrUnrankedMemRefOf<[F64]>:$input, F64:$mean);
+    let results = (outs F64:$stdev);
+
+    let assemblyFormat = [{
+        `(` $input `:` type($input) `,` $mean `:` type($mean) `)` attr-dict
+        `:` type($stdev)
+    }];
+
+    let hasVerifier = 0;
+}
+
+#endif // TPP_PERF_OPS

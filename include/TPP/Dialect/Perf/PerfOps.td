@@ -181,7 +181,7 @@ def Perf_StdevOp : Perf_Op<"stdev", []> {
 // DoNotOptOp
 //===----------------------------------------------------------------------===//
 
-def Perf_DoNotOpt : Perf_Op<"do_not_opt", [ConditionallySpeculatable]> {
+def Perf_DoNotOptOp : Perf_Op<"do_not_opt", [ConditionallySpeculatable]> {
     let summary = "Prevent removal of unused values.";
     let description = [{
         The `perf.do_not_opt` operation acts as a dummy, not speculatable

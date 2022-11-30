@@ -8,6 +8,8 @@
 
 #include "TPP/Dialect/Perf/PerfOps.h"
 #include "TPP/Passes.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -24,6 +26,45 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
 
   LogicalResult matchAndRewrite(perf::BenchOp benchOp,
                                 PatternRewriter &rewriter) const override {
+    auto loc = benchOp.getLoc();
+    auto numIters = benchOp.getNumIters();
+
+    // Allocate memory to store iteration results
+    auto allocType =
+        MemRefType::get({ShapedType::kDynamic}, rewriter.getF64Type());
+    auto resultMem =
+        rewriter.create<memref::AllocOp>(loc, allocType, ValueRange{numIters});
+    benchOp.replaceAllUsesWith(resultMem.getMemref());
+
+    // Create benchmark loop up to perf.bench numIters
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    auto one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    auto loop = rewriter.create<scf::ForOp>(loc, zero, numIters, one);
+    auto loopYield = loop.getRegion().front().getTerminator();
+
+    // Move perf.bench region inside the loop
+    rewriter.mergeBlockBefore(&benchOp.getRegion().front(), loopYield);
+
+    // Wrap the benchmark kernel in timer calls
+    rewriter.setInsertionPointToStart(loop.getBody());
+    auto timer =
+        rewriter.create<perf::StartTimerOp>(loc, rewriter.getIndexType());
+    rewriter.setInsertionPoint(loopYield);
+    auto delta = rewriter.create<perf::StopTimerOp>(loc, rewriter.getF64Type(),
+                                                    timer.getTimer());
+
+    // Move all perf.do_not_opt ops after the timer to prevent influencing
+    // measurement
+    for (auto &op : loop.getRegion().getOps()) {
+      if (isa<perf::DoNotOptOp>(op))
+        op.moveAfter(delta.getOperation());
+    }
+
+    // Store measured time delta
+    rewriter.create<memref::StoreOp>(loc, delta.getDelta(), resultMem,
+                                     loop.getInductionVar());
+
+    rewriter.eraseOp(benchOp);
     return success();
   }
 };

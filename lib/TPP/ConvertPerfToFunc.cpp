@@ -9,6 +9,7 @@
 #include "TPP/Dialect/Perf/PerfOps.h"
 #include "TPP/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
@@ -19,12 +20,48 @@ using namespace mlir::perf;
 
 namespace {
 
+static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
+                                       Operation *op,
+                                       PatternRewriter &rewriter) {
+  if (op->getNumResults() > 1)
+    return op->emitError(
+               "expected operation to have 0 or 1 result, but provided ")
+           << op->getNumResults();
+
+  FlatSymbolRefAttr fnName = SymbolRefAttr::get(op->getContext(), funcName);
+  ModuleOp module = op->getParentOfType<ModuleOp>();
+  auto libFnType =
+      rewriter.getFunctionType(op->getOperandTypes(), op->getResultTypes());
+
+  if (!module.lookupSymbol(fnName.getAttr())) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    // Insert before module terminator.
+    rewriter.setInsertionPoint(module.getBody(),
+                               std::prev(module.getBody()->end()));
+    func::FuncOp funcOp =
+        rewriter.create<func::FuncOp>(loc, fnName.getValue(), libFnType);
+    funcOp->setAttr(LLVM::LLVMDialect::getEmitCWrapperAttrName(),
+                    UnitAttr::get(rewriter.getContext()));
+    funcOp.setPrivate();
+  }
+
+  auto funcCall = rewriter.create<func::CallOp>(
+      loc, fnName.getValue(), libFnType.getResults(), op->getOperands());
+  op->replaceAllUsesWith(funcCall.getResults());
+
+  return success();
+}
+
 struct ConvertStartTimerOp : public OpRewritePattern<perf::StartTimerOp> {
   using OpRewritePattern<perf::StartTimerOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(perf::StartTimerOp startTimerOp,
                                 PatternRewriter &rewriter) const override {
-    return success();
+    auto res = buildPerfFuncCall(startTimerOp.getLoc(), "timer_start",
+                                 startTimerOp, rewriter);
+    if (succeeded(res))
+      rewriter.eraseOp(startTimerOp);
+    return res;
   }
 };
 
@@ -33,7 +70,11 @@ struct ConvertStopTimerOp : public OpRewritePattern<perf::StopTimerOp> {
 
   LogicalResult matchAndRewrite(perf::StopTimerOp stopTimerOp,
                                 PatternRewriter &rewriter) const override {
-    return success();
+    auto res = buildPerfFuncCall(stopTimerOp.getLoc(), "timer_stop",
+                                 stopTimerOp, rewriter);
+    if (succeeded(res))
+      rewriter.eraseOp(stopTimerOp);
+    return res;
   }
 };
 
@@ -42,7 +83,11 @@ struct ConvertMeanOp : public OpRewritePattern<perf::MeanOp> {
 
   LogicalResult matchAndRewrite(perf::MeanOp meanOp,
                                 PatternRewriter &rewriter) const override {
-    return success();
+    auto res =
+        buildPerfFuncCall(meanOp.getLoc(), "timer_average", meanOp, rewriter);
+    if (succeeded(res))
+      rewriter.eraseOp(meanOp);
+    return res;
   }
 };
 
@@ -51,7 +96,11 @@ struct ConvertStdevOp : public OpRewritePattern<perf::StdevOp> {
 
   LogicalResult matchAndRewrite(perf::StdevOp stdevOp,
                                 PatternRewriter &rewriter) const override {
-    return success();
+    auto res = buildPerfFuncCall(stdevOp.getLoc(), "timer_deviation", stdevOp,
+                                 rewriter);
+    if (succeeded(res))
+      rewriter.eraseOp(stdevOp);
+    return res;
   }
 };
 

@@ -8,6 +8,7 @@
 
 #include "TPP/Dialect/Perf/PerfOps.h"
 #include "TPP/Passes.h"
+#include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -104,9 +105,41 @@ struct ConvertStdevOp : public OpRewritePattern<perf::StdevOp> {
   }
 };
 
+static LogicalResult buildDoNotOptCall(std::string funcName,
+                                       perf::DoNotOptOp &doNotOptOp,
+                                       PatternRewriter &rewriter) {
+  auto loc = doNotOptOp.getLoc();
+  auto ctx = doNotOptOp.getContext();
+
+  auto ptrType = emitc::PointerType::get(ctx, doNotOptOp.getInput().getType());
+  auto inputPtr =
+      rewriter.create<emitc::ApplyOp>(loc, ptrType, "&", doNotOptOp.getInput());
+  auto opaquePtr = rewriter.create<emitc::CastOp>(
+      loc, emitc::OpaqueType::get(ctx, "void*"), inputPtr);
+  rewriter.create<emitc::CallOp>(
+      loc, TypeRange(), funcName, rewriter.getArrayAttr({}),
+      rewriter.getArrayAttr({}), opaquePtr.getResult());
+
+  return success();
+}
+
+struct ConvertDoNotOptOp : public OpRewritePattern<perf::DoNotOptOp> {
+  using OpRewritePattern<perf::DoNotOptOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(perf::DoNotOptOp doNotOptOp,
+                                PatternRewriter &rewriter) const override {
+    auto res = buildPerfFuncCall(doNotOptOp.getLoc(), "perf_do_not_opt",
+                                 doNotOptOp, rewriter);
+    // auto res = buildDoNotOptCall("perf_do_not_opt", doNotOptOp, rewriter);
+    if (succeeded(res))
+      rewriter.eraseOp(doNotOptOp);
+    return res;
+  }
+};
+
 void populatePerfToFuncPatterns(RewritePatternSet &patterns) {
   patterns.add<ConvertStartTimerOp, ConvertStopTimerOp, ConvertMeanOp,
-               ConvertStdevOp>(patterns.getContext());
+               ConvertStdevOp, ConvertDoNotOptOp>(patterns.getContext());
 }
 
 struct ConvertPerfToFunc : public ConvertPerfToFuncBase<ConvertPerfToFunc> {

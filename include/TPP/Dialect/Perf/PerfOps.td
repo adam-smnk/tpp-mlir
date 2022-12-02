@@ -10,6 +10,7 @@
 #define TPP_PERF_OPS
 
 include "PerfDialect.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 def PerfTimer : AnyTypeOf<[Index]>;
@@ -17,8 +18,10 @@ def PerfTimer : AnyTypeOf<[Index]>;
 //===----------------------------------------------------------------------===//
 // BenchOp
 //===----------------------------------------------------------------------===//
-
-def Perf_BenchOp : Perf_Op<"bench", [NoTerminator]> {
+// TODO to add terminator: SingleBlockImplicitTerminator<"perf::YieldOp">
+def Perf_BenchOp : Perf_Op<"bench",
+        [AutomaticAllocationScope,
+        NoTerminator]> {
     let summary = "Benchmark the enclosed code.";
     let description = [{
         The `perf.bench` operation generates benchmarking code
@@ -29,16 +32,17 @@ def Perf_BenchOp : Perf_Op<"bench", [NoTerminator]> {
         Example:
 
         ```mlir
- 
+
         %deltas = perf.bench (%n) {
           linalg.matmul ins(%A, %B: tensor<4x8xf32>, tensor<8x4xf32>) outs(%C: tensor<4x4xf32>)
         } -> memref<?xf64>
-        
+
         ```
     }];
 
     let arguments = (ins Index:$numIters);
     let results = (outs RankedOrUnrankedMemRefOf<[F64]>:$results);
+                        // Variadic<AnyType>:$bodyResults); // see async_executeOp
     let regions = (region SizedRegion<1>:$region);
 
     let assemblyFormat = [{
@@ -46,6 +50,31 @@ def Perf_BenchOp : Perf_Op<"bench", [NoTerminator]> {
         $region attr-dict
         `->` type($results)
     }];
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+def Perf_YieldOp : Perf_Op<"yield", [Pure, Terminator, ReturnLike]> {
+    let summary = "Yield values to parent operation.";
+    let description = [{
+      "perf.yield" yields an SSA value from the perf dialect op region and
+      terminates the regions. The semantics of how the values are yielded is
+      defined by the parent operation.
+      If "perf.yield" has any operands, the operands must match the parent
+      operation's results.
+      If the parent operation defines no values, then the "scf.yield" may be
+      left out in the custom syntax and the builders will insert one implicitly.
+      Otherwise, it has to be present in the syntax to indicate which values are
+      yielded.
+    }];
+
+    let arguments = (ins Variadic<AnyType>:$results);
+    let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+
+    let assemblyFormat =
+        [{  attr-dict ($results^ `:` type($results))? }];
 }
 
 //===----------------------------------------------------------------------===//

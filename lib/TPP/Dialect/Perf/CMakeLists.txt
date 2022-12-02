@@ -1,5 +1,6 @@
 add_mlir_dialect_library(TPPPerfDialect
   # Ops and dialects
+    BufferizableOpInterfaceImpl.cpp
     PerfDialect.cpp
     PerfOps.cpp
 

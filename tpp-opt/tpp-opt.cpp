@@ -23,12 +23,13 @@
 #include "TPP/Dialect/Check/CheckDialect.h"
 #include "TPP/Dialect/LinalgX/BufferizableOpInterfaceImpl.h"
 #include "TPP/Dialect/LinalgX/LinalgXDialect.h"
+#include "TPP/Dialect/Perf/BufferizableOpInterfaceImpl.h"
 #include "TPP/Dialect/Perf/PerfDialect.h"
 #include "TPP/Dialect/Tpp/TppDialect.h"
 #include "TPP/Dialect/Transform/LinalgXTransformOps.h"
 #include "TPP/Dialect/VNNI/BufferizableOpInterfaceImpl.h"
-#include "TPP/Dialect/VNNI/VNNIDialect.h"
 #include "TPP/Dialect/VNNI/TransformOps/VNNITransformOps.h"
+#include "TPP/Dialect/VNNI/VNNIDialect.h"
 #include "TPP/Dialect/Xsmm/XsmmDialect.h"
 #include "TPP/Passes.h"
 
@@ -48,7 +49,7 @@ int main(int argc, char **argv) {
   mlir::check::registerBufferizableOpInterfaceExternalModels(registry);
   mlir::vnni::registerBufferizableOpInterfaceExternalModels(registry);
   mlir::vnni::registerTransformDialectExtension(registry);
-
+  mlir::perf::registerBufferizableOpInterfaceExternalModels(registry);
   // Add the following to include *all* MLIR Core dialects, or selectively
   // include what you need like above. You only need to register dialects that
   // will be *parsed* by the tool, not the one generated

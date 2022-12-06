@@ -34,7 +34,7 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
         MemRefType::get({ShapedType::kDynamic}, rewriter.getF64Type());
     auto resultMem =
         rewriter.create<memref::AllocOp>(loc, allocType, ValueRange{numIters});
-    benchOp.replaceAllUsesWith(resultMem.getMemref());
+    benchOp.getDeltas().replaceAllUsesWith(resultMem.getMemref());
 
     // Create benchmark loop up to perf.bench numIters
     auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);

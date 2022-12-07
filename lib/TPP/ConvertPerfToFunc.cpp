@@ -11,7 +11,9 @@
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace mlir::perf;
@@ -20,6 +22,41 @@ using namespace mlir::perf;
 #include "TPP/Passes.h.inc"
 
 namespace {
+
+static SmallVector<Type> extractOperandTypes(OperandRange operands) {
+  SmallVector<Type> results;
+  results.reserve(operands.size());
+
+  for (Value operand : operands) {
+    Type operandType = operand.getType();
+    if (auto memrefType = operandType.dyn_cast<MemRefType>()) {
+      UnrankedMemRefType unrankedMemref = UnrankedMemRefType::get(
+          memrefType.getElementType(), memrefType.getMemorySpace());
+      results.push_back(unrankedMemref);
+    } else
+      results.push_back(operandType);
+  }
+  return results;
+}
+
+static SmallVector<Value> getMemRefOperands(OpBuilder &b, Location loc,
+                                            ValueRange operands) {
+  SmallVector<Value> res;
+  res.reserve(operands.size());
+  for (Value op : operands) {
+    auto memrefType = op.getType().dyn_cast<MemRefType>();
+    if (memrefType) {
+      MemRefType rankedMemref = op.getType().dyn_cast<MemRefType>();
+      UnrankedMemRefType unrankedMemref = UnrankedMemRefType::get(
+          rankedMemref.getElementType(), rankedMemref.getMemorySpace());
+      Value cast = b.create<memref::CastOp>(loc, unrankedMemref, op);
+      res.push_back(cast);
+    } else {
+      res.push_back(op);
+    }
+  }
+  return res;
+}
 
 static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
                                        Operation *op,
@@ -31,8 +68,8 @@ static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
 
   FlatSymbolRefAttr fnName = SymbolRefAttr::get(op->getContext(), funcName);
   ModuleOp module = op->getParentOfType<ModuleOp>();
-  auto libFnType =
-      rewriter.getFunctionType(op->getOperandTypes(), op->getResultTypes());
+  auto libFnType = rewriter.getFunctionType(
+      extractOperandTypes(op->getOperands()), op->getResultTypes());
 
   if (!module.lookupSymbol(fnName.getAttr())) {
     OpBuilder::InsertionGuard guard(rewriter);
@@ -47,7 +84,8 @@ static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
   }
 
   auto funcCall = rewriter.create<func::CallOp>(
-      loc, fnName.getValue(), libFnType.getResults(), op->getOperands());
+      loc, fnName.getValue(), libFnType.getResults(),
+      getMemRefOperands(rewriter, loc, op->getOperands()));
   op->replaceAllUsesWith(funcCall.getResults());
 
   return success();
@@ -123,13 +161,25 @@ static LogicalResult buildDoNotOptCall(std::string funcName,
   return success();
 }
 
+static void applyTypeMangling(std::string &name, Type type) {
+  llvm::raw_string_ostream mangledName(name);
+
+  TypeSwitch<Type>(type)
+      .Case<MemRefType>([&](Type t) { mangledName << "_memref"; })
+      .Case<TensorType>([&](Type t) { mangledName << "_tensor"; })
+      .Default([&](Type t) { mangledName << "_" << t; });
+}
+
 struct ConvertDoNotOptOp : public OpRewritePattern<perf::DoNotOptOp> {
   using OpRewritePattern<perf::DoNotOptOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(perf::DoNotOptOp doNotOptOp,
                                 PatternRewriter &rewriter) const override {
-    auto res = buildPerfFuncCall(doNotOptOp.getLoc(), "perf_do_not_opt",
-                                 doNotOptOp, rewriter);
+    std::string funcName("perf_do_not_opt");
+    applyTypeMangling(funcName, doNotOptOp.getInput().getType());
+
+    auto res =
+        buildPerfFuncCall(doNotOptOp.getLoc(), funcName, doNotOptOp, rewriter);
     // auto res = buildDoNotOptCall("perf_do_not_opt", doNotOptOp, rewriter);
     if (succeeded(res))
       rewriter.eraseOp(doNotOptOp);

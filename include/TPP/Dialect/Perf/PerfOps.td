@@ -45,26 +45,10 @@ def Perf_BenchOp : Perf_Op<"bench",
                         Variadic<AnyType>:$bodyResults); // see async_executeOp
     let regions = (region SizedRegion<1>:$region);
 
-    // let assemblyFormat = [{
-    //     `(` $numIters `)`
-    //     $region attr-dict
-    //     `->` type($results)
-    // }];
-    let hasCustomAssemblyFormat = 1;
-    let skipDefaultBuilders = 1;
-    let builders = [
-        OpBuilder<(ins "TypeRange":$resultTypes, "ValueRange":$operands,
-        CArg<"function_ref<void(OpBuilder &, Location, ValueRange)>",
-            "nullptr">:$bodyBuilder)>,
-    ];
-
-    let extraClassDeclaration = [{
-    using BodyBuilderFn =
-        function_ref<void(OpBuilder &, Location, ValueRange)>;
-
-    Type getDeltasType() {
-      return getResultTypes()[0];
-    }
+    let assemblyFormat = [{
+        `(` $numIters `)`
+        $region attr-dict
+        `->` type($deltas) (`,` type($bodyResults)^)?
     }];
 }
 
@@ -72,7 +56,7 @@ def Perf_BenchOp : Perf_Op<"bench",
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def Perf_YieldOp : Perf_Op<"yield", [HasParent<"BenchOp">,
+def Perf_YieldOp : Perf_Op<"yield", [ //HasParent<"BenchOp">,
                             Pure, Terminator, ReturnLike]> {
     let summary = "Yield values to parent operation.";
     let description = [{

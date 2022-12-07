@@ -28,6 +28,11 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
                                 PatternRewriter &rewriter) const override {
     auto loc = benchOp.getLoc();
     auto numIters = benchOp.getNumIters();
+    auto benchYield = benchOp.getRegion().front().getTerminator();
+
+    if (benchYield->getNumOperands() != 0)
+      return benchOp.emitOpError(
+          "lowering with yielded values is not supported");
 
     // Allocate memory to store iteration results
     auto allocType =
@@ -63,6 +68,11 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
     // Store measured time delta
     rewriter.create<memref::StoreOp>(loc, delta.getDelta(), resultMem,
                                      loop.getInductionVar());
+
+    // Forward perf.yield to the scf.yield
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(loopYield,
+                                              benchYield->getResults());
+    rewriter.eraseOp(benchYield);
 
     rewriter.eraseOp(benchOp);
     return success();

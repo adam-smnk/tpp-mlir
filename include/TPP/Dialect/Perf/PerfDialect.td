@@ -23,7 +23,6 @@ def Perf_Dialect : Dialect {
         for code performance benchmarking.
     }];
     let cppNamespace = "::mlir::perf";
-    let emitAccessorPrefix = kEmitAccessorPrefix_Prefixed;
 }
 
 //===----------------------------------------------------------------------===//

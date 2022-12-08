@@ -29,6 +29,10 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
     auto loc = benchOp.getLoc();
     auto benchYield = benchOp.getRegion().front().getTerminator();
 
+    // TODO: add support for yielding values - requires either iter_args
+    //       approach like in scf.for or automatic memory allocation
+    //       outside of the benchmarking loop scope
+    // TODO: replace perf.bench yielded values with loop yielded values
     if (benchYield->getNumOperands() != 0)
       return benchOp.emitOpError(
           "lowering with yielded values is not supported");

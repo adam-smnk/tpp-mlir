@@ -19,7 +19,6 @@ def PerfTimer : AnyTypeOf<[I64]>;
 //===----------------------------------------------------------------------===//
 // BenchOp
 //===----------------------------------------------------------------------===//
-// TODO to add terminator: SingleBlockImplicitTerminator<"perf::YieldOp">
 def Perf_BenchOp : Perf_Op<"bench",
         [AutomaticAllocationScope, SingleBlockImplicitTerminator<"perf::YieldOp">]> {
     let summary = "Benchmark the enclosed code.";
@@ -38,11 +37,21 @@ def Perf_BenchOp : Perf_Op<"bench",
         } -> memref<?xf64>
 
         ```
+
+        Optionally, yield can be added:
+        ```mlir
+
+        %deltas = perf.bench (%n) {
+          %a = arith,addi %b, %c : i64
+          perf.yield
+        } -> memref<?xf64>
+
+        ```
     }];
 
     let arguments = (ins I64:$numIters);
-    let results = (outs RankedOrUnrankedMemRefOf<[F64]>:$deltas, //);
-                        Variadic<AnyType>:$bodyResults); // see async_executeOp
+    let results = (outs RankedOrUnrankedMemRefOf<[F64]>:$deltas,
+                        Variadic<AnyType>:$bodyResults);
     let regions = (region SizedRegion<1>:$region);
 
     let assemblyFormat = [{

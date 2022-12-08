@@ -23,6 +23,7 @@ using namespace mlir::perf;
 
 namespace {
 
+// Cast memref to unranked memref and leave all the other operands as they are.
 static SmallVector<Type> extractOperandTypes(OperandRange operands) {
   SmallVector<Type> results;
   results.reserve(operands.size());
@@ -39,6 +40,9 @@ static SmallVector<Type> extractOperandTypes(OperandRange operands) {
   return results;
 }
 
+// Similar to 'extractInvokeOperandTypes' but acting on Value. Memref
+// are casted by introducing castOp. We cast the memref to clear the shape
+// and have a single function signature in the runtime.
 static SmallVector<Value> getMemRefOperands(OpBuilder &b, Location loc,
                                             ValueRange operands) {
   SmallVector<Value> res;
@@ -58,6 +62,20 @@ static SmallVector<Value> getMemRefOperands(OpBuilder &b, Location loc,
   return res;
 }
 
+// Apply custom function name mangling for various data types.
+// It is assumed that all relevant perf operations accept
+// the same kind of unranked memory types of the same element type.
+// This allows for simpler name mangling and leaner perf runtime.
+static void applyTypeMangling(std::string &name, Type type) {
+  llvm::raw_string_ostream mangledName(name);
+
+  TypeSwitch<Type>(type)
+      .Case<MemRefType>([&](Type t) { mangledName << "_memref"; })
+      .Case<TensorType>([&](Type t) { mangledName << "_tensor"; })
+      .Default([&](Type t) { mangledName << "_" << t; });
+}
+
+// Creates function prototypes and insert calls to the perf runtime functions
 static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
                                        Operation *op,
                                        PatternRewriter &rewriter) {
@@ -71,6 +89,7 @@ static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
   auto libFnType = rewriter.getFunctionType(
       extractOperandTypes(op->getOperands()), op->getResultTypes());
 
+  // Create function prototype if it is not available yet
   if (!module.lookupSymbol(fnName.getAttr())) {
     OpBuilder::InsertionGuard guard(rewriter);
     // Insert before module terminator.
@@ -83,6 +102,7 @@ static LogicalResult buildPerfFuncCall(Location loc, std::string funcName,
     funcOp.setPrivate();
   }
 
+  // Insert a function call to the perf runtime
   auto funcCall = rewriter.create<func::CallOp>(
       loc, fnName.getValue(), libFnType.getResults(),
       getMemRefOperands(rewriter, loc, op->getOperands()));
@@ -143,21 +163,17 @@ struct ConvertStdevOp : public OpRewritePattern<perf::StdevOp> {
   }
 };
 
-static void applyTypeMangling(std::string &name, Type type) {
-  llvm::raw_string_ostream mangledName(name);
-
-  TypeSwitch<Type>(type)
-      .Case<MemRefType>([&](Type t) { mangledName << "_memref"; })
-      .Case<TensorType>([&](Type t) { mangledName << "_tensor"; })
-      .Default([&](Type t) { mangledName << "_" << t; });
-}
-
 struct ConvertDoNotOptOp : public OpRewritePattern<perf::DoNotOptOp> {
   using OpRewritePattern<perf::DoNotOptOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(perf::DoNotOptOp doNotOptOp,
                                 PatternRewriter &rewriter) const override {
     std::string funcName("perf_do_not_opt");
+    // perf.do_not_opt relies on the perf runtime to prevent
+    // complier from optimizing away marked data
+    // Name mangling is required as the op accepts any kind of data.
+    // For simplicity, the mangling makes some assumptions on data types
+    // supported by the perf dialect.
     applyTypeMangling(funcName, doNotOptOp.getInput().getType());
 
     auto res =

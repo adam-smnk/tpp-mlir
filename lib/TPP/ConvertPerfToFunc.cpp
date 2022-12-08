@@ -143,24 +143,6 @@ struct ConvertStdevOp : public OpRewritePattern<perf::StdevOp> {
   }
 };
 
-static LogicalResult buildDoNotOptCall(std::string funcName,
-                                       perf::DoNotOptOp &doNotOptOp,
-                                       PatternRewriter &rewriter) {
-  auto loc = doNotOptOp.getLoc();
-  auto ctx = doNotOptOp.getContext();
-
-  auto ptrType = emitc::PointerType::get(ctx, doNotOptOp.getInput().getType());
-  auto inputPtr =
-      rewriter.create<emitc::ApplyOp>(loc, ptrType, "&", doNotOptOp.getInput());
-  auto opaquePtr = rewriter.create<emitc::CastOp>(
-      loc, emitc::OpaqueType::get(ctx, "void*"), inputPtr);
-  rewriter.create<emitc::CallOp>(
-      loc, TypeRange(), funcName, rewriter.getArrayAttr({}),
-      rewriter.getArrayAttr({}), opaquePtr.getResult());
-
-  return success();
-}
-
 static void applyTypeMangling(std::string &name, Type type) {
   llvm::raw_string_ostream mangledName(name);
 
@@ -180,7 +162,6 @@ struct ConvertDoNotOptOp : public OpRewritePattern<perf::DoNotOptOp> {
 
     auto res =
         buildPerfFuncCall(doNotOptOp.getLoc(), funcName, doNotOptOp, rewriter);
-    // auto res = buildDoNotOptCall("perf_do_not_opt", doNotOptOp, rewriter);
     if (succeeded(res))
       rewriter.eraseOp(doNotOptOp);
     return res;

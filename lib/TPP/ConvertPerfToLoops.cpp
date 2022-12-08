@@ -27,12 +27,14 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
   LogicalResult matchAndRewrite(perf::BenchOp benchOp,
                                 PatternRewriter &rewriter) const override {
     auto loc = benchOp.getLoc();
-    auto numIters = benchOp.getNumIters();
     auto benchYield = benchOp.getRegion().front().getTerminator();
 
     if (benchYield->getNumOperands() != 0)
       return benchOp.emitOpError(
           "lowering with yielded values is not supported");
+
+    auto numIters = rewriter.create<arith::IndexCastOp>(
+        loc, rewriter.getIndexType(), benchOp.getNumIters());
 
     // Allocate memory to store iteration results
     auto allocType =
@@ -53,7 +55,7 @@ struct ConvertBenchToLoops : public OpRewritePattern<perf::BenchOp> {
     // Wrap the benchmark kernel in timer calls
     rewriter.setInsertionPointToStart(loop.getBody());
     auto timer =
-        rewriter.create<perf::StartTimerOp>(loc, rewriter.getIndexType());
+        rewriter.create<perf::StartTimerOp>(loc, rewriter.getI64Type());
     rewriter.setInsertionPoint(loopYield);
     auto delta = rewriter.create<perf::StopTimerOp>(loc, rewriter.getF64Type(),
                                                     timer.getTimer());

@@ -14,7 +14,7 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 
-def PerfTimer : AnyTypeOf<[Index]>;
+def PerfTimer : AnyTypeOf<[I64]>;
 
 //===----------------------------------------------------------------------===//
 // BenchOp
@@ -40,7 +40,7 @@ def Perf_BenchOp : Perf_Op<"bench",
         ```
     }];
 
-    let arguments = (ins Index:$numIters);
+    let arguments = (ins I64:$numIters);
     let results = (outs RankedOrUnrankedMemRefOf<[F64]>:$deltas, //);
                         Variadic<AnyType>:$bodyResults); // see async_executeOp
     let regions = (region SizedRegion<1>:$region);
@@ -94,7 +94,7 @@ def Perf_StartTimerOp : Perf_Op<"start_timer", []> {
 
         ```mlir
  
-        %t = perf.start_timer : index
+        %t = perf.start_timer : i64
         ... // ops under measurement
         
         ```
@@ -124,9 +124,9 @@ def Perf_StopTimerOp : Perf_Op<"stop_timer", []> {
 
         ```mlir
  
-        %t = perf.start_timer : index
+        %t = perf.start_timer : i64
         ... // ops under measurement
-        %delta = perf.stop_timer(%t : index) : f64
+        %delta = perf.stop_timer(%t : i64) : f64
         
         ```
     }];

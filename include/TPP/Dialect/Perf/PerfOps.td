@@ -235,7 +235,7 @@ def Perf_DoNotOptOp : Perf_Op<"do_not_opt", [ConditionallySpeculatable]> {
 
         %deltas = perf.bench (%n) {
           %a = arith.addi %b, %c : i64
-          perf.do_not_opt(%a) // make sure that 'addi' is not optimized away
+          perf.do_not_opt(%a) : i64 // make sure that 'addi' is not optimized away
         } -> memref<?xf64>
 
         ```

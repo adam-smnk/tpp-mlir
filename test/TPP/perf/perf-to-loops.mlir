@@ -2,11 +2,12 @@
 
 // CHECK-LABEL: @perf_single_op
 func.func @perf_single_op(%arg0: tensor<4x8xf32>,
-          %arg1: tensor<8x4xf32>, %arg2: tensor<4x4xf32>, %arg3: index) {
+          %arg1: tensor<8x4xf32>, %arg2: tensor<4x4xf32>, %arg3: i64) {
   // CHECK-DAG: %[[lb:.*]] = arith.constant 0 : index
   // CHECK-DAG: %[[step:.*]] = arith.constant 1 : index
-  // CHECK: %[[deltas:.*]] = memref.alloc(%arg3)
-  // CHECK: scf.for %[[i:.*]] = %[[lb]] to %arg3 step %[[step]] {
+  // CHECK: %[[ub:.*]] = arith.index_cast %arg3 : i64 to index
+  // CHECK: %[[deltas:.*]] = memref.alloc(%[[ub]])
+  // CHECK: scf.for %[[i:.*]] = %[[lb]] to %[[ub]] step %[[step]] {
   // CHECK:   %[[timer:.*]] = perf.start_timer
   // CHECK:   %[[val:.*]] = linalg.matmul
   // CHECK:   %[[delta:.*]] = perf.stop_timer(%[[timer]] {{.*}})
@@ -20,6 +21,8 @@ func.func @perf_single_op(%arg0: tensor<4x8xf32>,
 
   // CHECK: perf.mean(%[[deltas]] {{.*}})
   %mean = perf.mean(%deltas : memref<?xf64>) : f64
+  // CHECK:  memref.dealloc %[[deltas]]
+  memref.dealloc %deltas : memref<?xf64>
   return
 }
 
@@ -30,7 +33,7 @@ func.func @perf_single_op(%arg0: tensor<4x8xf32>,
 func.func @perf_multi_op(%arg0: tensor<4x8xf32>,
           %arg1: tensor<8x4xf32>, %arg2: tensor<4x4xf32>) {
   %f42 = arith.constant 42.0 : f32
-  %c50 = arith.constant 50 : index
+  %c50 = arith.constant 50 : i64
 
   // CHECK-DAG: %[[numIter:.*]] = arith.constant 50 : index
   // CHECK-DAG: %[[lb:.*]] = arith.constant 0 : index
@@ -56,9 +59,12 @@ func.func @perf_multi_op(%arg0: tensor<4x8xf32>,
           linalg.yield %3 : f32
     } -> tensor<4x4xf32>
     perf.do_not_opt(%2) : tensor<4x4xf32>
+    perf.yield
   } -> memref<50xf64>
 
   // CHECK: perf.mean(%[[deltas]] {{.*}})
   %mean = perf.mean(%deltas : memref<50xf64>) : f64
+  // CHECK:  memref.dealloc %[[deltas]]
+  memref.dealloc %deltas : memref<50xf64>
   return
 }

@@ -85,6 +85,8 @@ def Perf_YieldOp : Perf_Op<"yield", [ HasParent<"BenchOp">,
 
     let assemblyFormat =
         [{  attr-dict ($results^ `:` type($results))? }];
+
+    let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

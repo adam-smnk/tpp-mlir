@@ -65,7 +65,7 @@ def Perf_BenchOp : Perf_Op<"bench",
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def Perf_YieldOp : Perf_Op<"yield", [ //HasParent<"BenchOp">,
+def Perf_YieldOp : Perf_Op<"yield", [ HasParent<"BenchOp">,
                             Pure, Terminator, ReturnLike]> {
     let summary = "Yield values to parent operation.";
     let description = [{

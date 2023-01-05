@@ -19,7 +19,7 @@ func.func @conv2d_1x1(
   // CHECK: call @xsmm_matmul_dispatch
   // CHECK: %[[cast:.*]] = memref.cast
   // CHECK: %[[cast1:.*]] = memref.cast
-  // CHECK: %[[cast2:.*]] = memref.cast 
+  // CHECK: %[[cast2:.*]] = memref.cast
   // CHECK: call @xsmm_matmul_invoke({{.*}}%[[cast]], %[[cast1]], %[[cast2]]
   %0 = tensor.empty() : !conv1x1_output_tensor_t
   %1 = linalg.fill ins(%cst_0 : f32) outs(%0 : !conv1x1_output_tensor_t) -> !conv1x1_output_tensor_t

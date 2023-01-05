@@ -16,7 +16,7 @@ func.func @conv2d_1x1(%arg0: memref<1x7x7x2048xf32>) -> memref<1x7x7x512xf32> {
   // CHECK: call @xsmm_matmul_dispatch
   // CHECK: %[[cast:.*]] = memref.cast
   // CHECK: %[[cast1:.*]] = memref.cast
-  // CHECK: %[[cast2:.*]] = memref.cast 
+  // CHECK: %[[cast2:.*]] = memref.cast
   // CHECK: call @xsmm_matmul_invoke({{.*}}%[[cast]], %[[cast1]], %[[cast2]]
   %alloc = memref.alloc() {alignment = 128 : i64} : memref<1x7x7x512xf32>
   linalg.fill ins(%cst : f32) outs(%alloc : memref<1x7x7x512xf32>)

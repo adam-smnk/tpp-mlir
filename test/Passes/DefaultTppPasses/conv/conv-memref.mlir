@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -decompose-conv-to-matmul-or-brgemm -default-tpp-passes -split-input-file | FileCheck %s
+// RUN: tpp-opt %s -default-tpp-passes -split-input-file | FileCheck %s
 
 // Conv2D weights
 memref.global "private" constant @__constant_2048x512xf32 : memref<2048x512xf32> = dense<0.00332225906> {alignment = 128 : i64}

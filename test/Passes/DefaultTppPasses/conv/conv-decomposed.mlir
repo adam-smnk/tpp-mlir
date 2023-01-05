@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -decompose-conv-to-matmul-or-brgemm -default-tpp-passes -split-input-file | FileCheck %s
+// RUN: tpp-opt %s -default-tpp-passes -split-input-file | FileCheck %s
 
 #map = affine_map<(d0, d1) -> (d0 + d1)>
 

@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -decompose-conv-to-matmul-or-brgemm -default-tpp-passes -split-input-file | FileCheck %s
+// RUN: tpp-opt %s -default-tpp-passes -split-input-file | FileCheck %s
 
 // 1x1 Conv2D shapes
 !conv1x1_input_tensor_t  = tensor<1x7x7x2048xf32> // N,H,W,Ic

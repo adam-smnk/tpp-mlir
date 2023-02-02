@@ -248,4 +248,12 @@ def RaiseToParallelLoop : Pass<"raise-to-parallel-loop",
   let constructor = "mlir::tpp::createRaiseToParallelLoopPass()";
 }
 
+// Copied from IREE
+// See HoistStaticallyBoundAllocations.cpp
+def HoistStaticallyBoundAllocations :
+    Pass<"hoist-statically-bound-allocations", "func::FuncOp"> {
+  let summary = "Hoist statically bound alloca ops to the entry block of functions";
+  let constructor = "mlir::tpp::createHoistStaticallyBoundAllocationsPass()";
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

@@ -17,6 +17,10 @@ namespace mlir {
 class RewriterBase;
 class Value;
 
+namespace func {
+class FuncOp;
+}
+
 namespace linalg {
 class GenericOp;
 class LinalgOp;
@@ -25,6 +29,10 @@ class Conv2DNhwcHwcfOp;
 class MatmulOp;
 class BatchReduceMatmulOp;
 } // namespace linalg
+
+namespace memref {
+class AllocaOp;
+}
 
 namespace vnni {
 class MatmulOp;
@@ -77,6 +85,16 @@ collapseIterators(RewriterBase &rewriter, linalg::GenericOp genericOp,
 // TODO: We may not want to fail here.
 FailureOr<linalg::GenericOp> mapLinalgToTpp(RewriterBase &rewriter,
                                             linalg::GenericOp linalgOp);
+
+std::optional<Value>
+hoistStaticallyBoundAllocations(func::FuncOp funcOp, OpBuilder &builder,
+                                Location loc, MemRefType allocaType,
+                                ValueRange dynamicSizes,
+                                std::optional<uint64_t> alignment);
+
+std::optional<Value> hoistStaticallyBoundAllocations(func::FuncOp funcOp,
+                                                     OpBuilder &builder,
+                                                     memref::AllocaOp allocaOp);
 
 } // namespace linalgx
 

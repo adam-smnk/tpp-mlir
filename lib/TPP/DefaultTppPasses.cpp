@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "TPP/Passes.h"
+#include "TPP/Transforms.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
@@ -32,6 +34,64 @@ using namespace mlir::tpp;
 #include "TPP/Passes.h.inc"
 
 namespace {
+
+// Copied from IREE
+// See Codegen/LLVMCPU/Passes.cpp
+FailureOr<Value> cpuAllocationFn(OpBuilder &builder, Location loc,
+                                 MemRefType memRefType, ValueRange dynamicSizes,
+                                 unsigned alignment) {
+  auto funcOp = builder.getInsertionPoint()->getParentOfType<func::FuncOp>();
+  if (funcOp) {
+    std::optional<Value> hoistedAllocation =
+        linalgx::hoistStaticallyBoundAllocations(
+            funcOp, builder, loc, memRefType, dynamicSizes, alignment);
+    if (hoistedAllocation) {
+      return hoistedAllocation.value();
+    }
+  }
+  return builder
+      .create<memref::AllocaOp>(loc, memRefType, dynamicSizes,
+                                builder.getI64IntegerAttr(alignment))
+      .getResult();
+}
+
+LogicalResult cpuDeallocationFn(OpBuilder &builder, Location loc,
+                                Value allocation) {
+  return success();
+}
+
+Operation *createLinalgCopyOp(OpBuilder &b, Location loc, Value from, Value to,
+                              ArrayRef<NamedAttribute> attributes) {
+  auto memrefTypeFrom = from.getType().dyn_cast<MemRefType>();
+  auto memrefTypeTo = to.getType().dyn_cast<MemRefType>();
+  if (!memrefTypeFrom || !memrefTypeTo ||
+      memrefTypeFrom.getRank() != memrefTypeTo.getRank()) {
+    mlir::emitError(
+        loc, "unable to generate copy op within bufferization from type ")
+        << memrefTypeFrom << " to " << memrefTypeTo;
+    return nullptr;
+  }
+  AffineMap id =
+      AffineMap::getMultiDimIdentityMap(memrefTypeTo.getRank(), b.getContext());
+  SmallVector<utils::IteratorType> iteratorTypes(memrefTypeTo.getRank(),
+                                                 utils::IteratorType::parallel);
+  return b.create<linalg::GenericOp>(
+      loc,
+      /*inputs=*/from,
+      /*outputs=*/to,
+      /*indexingMaps=*/llvm::ArrayRef({id, id}),
+      /*iteratorTypes=*/iteratorTypes,
+      [](OpBuilder &b, Location loc, ValueRange args) {
+        b.create<linalg::YieldOp>(loc, args.front());
+      },
+      attributes);
+}
+
+LogicalResult cpuCopyFn(OpBuilder &builder, Location loc, Value from,
+                        Value to) {
+  createLinalgCopyOp(builder, loc, from, to, {});
+  return success();
+}
 
 struct DefaultTppPasses : public DefaultTppPassesBase<DefaultTppPasses> {
   DefaultTppPasses() : DefaultTppPasses(false){};
@@ -97,6 +157,9 @@ private:
     buffOpts.bufferizeFunctionBoundaries = true;
     buffOpts.functionBoundaryTypeConversion =
         bufferization::LayoutMapOption::IdentityLayoutMap;
+    buffOpts.allocationFn = cpuAllocationFn;
+    buffOpts.deallocationFn = cpuDeallocationFn;
+    buffOpts.memCpyFn = cpuCopyFn;
     pm.addPass(bufferization::createOneShotBufferizePass(buffOpts));
     pm.addPass(bufferization::createDropEquivalentBufferResultsPass());
     pm.addNestedPass<func::FuncOp>(

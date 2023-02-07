@@ -207,8 +207,71 @@ private:
   }
 };
 
+struct BufferizeStatic : public BufferizeStaticBase<BufferizeStatic> {
+  BufferizeStatic() = default;
+
+  void getDependentDialects(DialectRegistry &registry) const override {
+    // Add all custom TPP dialects.
+    registry.insert<tpp::TppDialect>();
+    registry.insert<xsmm::XsmmDialect>();
+    registry.insert<check::CheckDialect>();
+    registry.insert<vnni::VNNIDialect>();
+    registry.insert<perf::PerfDialect>();
+    bufferization::registerAllocationOpInterfaceExternalModels(registry);
+    linalgx::registerTransformDialectExtension(registry);
+    check::registerBufferizableOpInterfaceExternalModels(registry);
+    vnni::registerBufferizableOpInterfaceExternalModels(registry);
+    perf::registerBufferizableOpInterfaceExternalModels(registry);
+
+    // Add all core MLIR dialects as the default TPP passes may contain any
+    // combination of other passes.
+    registerAllDialects(registry);
+  }
+
+  void runOnOperation() override {
+    ModuleOp module = getOperation();
+
+    // Initialize the pipeline if needed.
+    // Otherwise, just run the cached one.
+    if (pm.empty())
+      constructPipeline();
+
+    if (failed(runPipeline(pm, module)))
+      return signalPassFailure();
+  }
+
+private:
+  OpPassManager pm;
+
+  // Create the default processing pipeline.
+  void constructPipeline() {
+    pm.clear();
+
+    // Run bufferization as the rest of the passes prefer working on memref.
+    bufferization::OneShotBufferizationOptions buffOpts;
+    buffOpts.allowReturnAllocs = true;
+    buffOpts.bufferizeFunctionBoundaries = true;
+    buffOpts.functionBoundaryTypeConversion =
+        bufferization::LayoutMapOption::IdentityLayoutMap;
+    buffOpts.allocationFn = cpuAllocationFn;
+    buffOpts.deallocationFn = cpuDeallocationFn;
+    buffOpts.memCpyFn = cpuCopyFn;
+    pm.addPass(bufferization::createOneShotBufferizePass(buffOpts));
+    pm.addPass(bufferization::createDropEquivalentBufferResultsPass());
+    pm.addNestedPass<func::FuncOp>(
+        bufferization::createFinalizingBufferizePass());
+    // Clean up after bufferization.
+    pm.addPass(bufferization::createBufferDeallocationPass());
+    pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
+  }
+};
+
 } // namespace
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::tpp::createDefaultTppPass() {
   return std::make_unique<DefaultTppPasses>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::tpp::createBufferizeStatic() {
+  return std::make_unique<BufferizeStatic>();
 }

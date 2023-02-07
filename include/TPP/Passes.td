@@ -256,4 +256,12 @@ def HoistStaticallyBoundAllocations :
   let constructor = "mlir::tpp::createHoistStaticallyBoundAllocationsPass()";
 }
 
+def BufferizeStatic : Pass<"bufferize-static", "ModuleOp"> {
+  let summary = "Bufferization with alloca";
+  let constructor = "mlir::tpp::createBufferizeStatic()";
+  let description = [{
+    Bufferize with alloca
+  }];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

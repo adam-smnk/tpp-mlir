@@ -85,6 +85,7 @@ createTileConsumerAndFuseProducersPass();
 std::unique_ptr<OperationPass<func::FuncOp>>
 createRewriteConvToMatmulOrBrgemmPass();
 std::unique_ptr<OperationPass<ModuleOp>> createDefaultTppPass();
+std::unique_ptr<OperationPass<ModuleOp>> mlir::tpp::createBufferizeStatic();
 std::unique_ptr<OperationPass<func::FuncOp>>
 createGeneralizeTensorPackAndUnPackPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createRaiseToParallelLoopPass();

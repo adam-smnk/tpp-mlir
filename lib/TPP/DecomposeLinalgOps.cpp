@@ -118,6 +118,17 @@ struct DecomposeLinalgPass
     return;
   }
 };
+
+// Expose the upstream decomposition pattern as a pass.
+struct DecomposeDefaultPass
+    : public DecomposeDefaultPassBase<DecomposeDefaultPass> {
+  void runOnOperation() override {
+    RewritePatternSet patterns(&getContext());
+    linalg::populateDecomposeLinalgOpsPattern(patterns, true);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+    return;
+  }
+};
 } // namespace
 
 /// Helper method to compute the range of a generic op.
@@ -447,4 +458,9 @@ void mlir::linalgx::populateDecomposeLinalgOpsPattern(
 std::unique_ptr<OperationPass<ModuleOp>>
 mlir::tpp::createDecomposeLinalgPass() {
   return std::make_unique<DecomposeLinalgPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>>
+mlir::tpp::createDecomposeDefaultPass() {
+  return std::make_unique<DecomposeDefaultPass>();
 }

@@ -281,4 +281,23 @@ def ConvInitSimplify : Pass<"conv-init-simplify", "func::FuncOp"> {
   let constructor = "mlir::tpp::createConvInitSimplifyPass()";
 }
 
+def DecomposeLinalgPass : Pass<"decompose-linalg", "ModuleOp"> {
+  let summary = "Split linalg generics into separate ops";
+  let description = [{
+    Decompose a GenericOp that has more than two statements
+    into one GenericOp with the first statement (i.e. peeled operation), and
+    a second GenericOp with the remaining statements (i.e. residual operations).
+  }];
+  let constructor = "mlir::tpp::createDecomposeLinalgPass()";
+}
+
+def SplitGenericToTpp : Pass<"split-generic-to-tpp", "ModuleOp"> {
+  let summary = "Split linalg generics into separate tpp mappable ops";
+  let description = [{
+    Split linalg generics with multiple body ops into separate generic ops
+    mappable to tpp.
+  }];
+  let constructor = "mlir::tpp::createSplitGenericToTpp()";
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

@@ -15,6 +15,8 @@
 
 namespace mlir {
 class TypeRange;
+class Operation;
+class Value;
 
 namespace linalg {
 class LinalgOp;
@@ -29,12 +31,24 @@ namespace utils {
 // dimensions.
 bool hasStaticShape(linalg::LinalgOp linalgOp);
 
+// Returns true if all the operands of the current linalgOp are shape type and
+// have the same statically-known shape.
+bool allOperandsHaveSameType(linalg::GenericOp linalgOp);
+
+// Returns true if the linalg operation indexing maps are projected permutation
+// maps.
+bool allIndexingsAreProjectedPermutation(linalg::GenericOp genericOp);
+
 // Returns true if the linalg operation has been marked by the tpp detection
 // pass and the operation can be mapped to a tpp operation.
 bool hasTppMark(linalg::LinalgOp linalgOp);
 
 // Returns true if the linalg operation is marked with 'target'.
 bool isMarkedWithTpp(linalg::LinalgOp linalgOp, const std::string &target);
+
+// Returns true if the linalg operation matches general tpp mapping
+// prerequisites.
+bool hasMappingToTppConditions(linalg::GenericOp linalgOp);
 
 // Returns true if the linalg operation has a Matmul region.
 bool hasMatmulBody(linalg::LinalgOp linalgOp);

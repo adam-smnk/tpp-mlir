@@ -180,6 +180,13 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
   SmallVector<AffineMap> peeledGenericOpIndexingMaps =
       genericOp.getIndexingMapsArray();
 
+  SmallVector<Value> insOperands = genericOp.getInputs();
+  SmallVector<Value> origOuts = genericOp.getOutputs();
+  insOperands.append(origOuts);
+  for (OpOperand *outOperand : genericOp.getDpsInitOperands())
+    peeledGenericOpIndexingMaps.push_back(
+        genericOp.getMatchingIndexingMap(outOperand));
+
   /// Compute the loop ranges for operation. This is the shape of the result of
   /// the generic op for the peeled operation.
   Location loc = genericOp.getLoc();
@@ -257,7 +264,7 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
   auto indexingMapAttr =
       rewriter.getAffineMapArrayAttr(peeledGenericOpIndexingMaps);
   return rewriter.create<GenericOp>(
-      loc, resultTypes, genericOp.getInputs(), outsOperands, indexingMapAttr,
+      loc, resultTypes, insOperands, outsOperands, indexingMapAttr,
       genericOp.getIteratorTypes(), /*doc=*/nullptr, /*libraryCall=*/nullptr,
       [](OpBuilder, Location, ValueRange) {});
 }
@@ -270,6 +277,8 @@ DecomposeLinalgOp::createResidualGenericOp(GenericOp genericOp,
   /// residual generic op.
   bool isTensor = genericOp.hasTensorSemantics();
   SmallVector<Value> residualGenericOpOperands = genericOp.getInputs();
+  SmallVector<Value> origOuts = genericOp.getOutputs();
+  residualGenericOpOperands.append(origOuts);
   unsigned origNumResults =
       isTensor ? genericOp.getNumResults() : genericOp.getOutputs().size();
   unsigned peeledGenericOpNumResults =
@@ -298,6 +307,8 @@ DecomposeLinalgOp::createResidualGenericOp(GenericOp genericOp,
       llvm::map_range(genericOp.getDpsInputOperands(), [&](OpOperand *operand) {
         return genericOp.getMatchingIndexingMap(operand);
       }));
+  for (OpOperand *outOperand : genericOp.getDpsInitOperands())
+    indexingMaps.push_back(genericOp.getMatchingIndexingMap(outOperand));
   for (auto resultNum : llvm::seq<unsigned>(0, peeledGenericOpNumResults)) {
     if (isTensor) {
       OpResult result = peeledGenericOp.getResult(resultNum).cast<OpResult>();
@@ -389,6 +400,13 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
   /// In the split operations, replace block arguments uses that refer to
   /// original operation to the block arguments of the newly created operation.
   unsigned origNumInputs = genericOp.getNumDpsInputs();
+  unsigned origNumOutputs = genericOp.getNumDpsInits();
+  llvm::dbgs() << "Orig op:\n";
+  genericOp.dump();
+  llvm::dbgs() << "Peeled op:\n";
+  peeledGenericOp.dump();
+  llvm::dbgs() << "Residual op:\n";
+  residualGenericOp.dump();
   for (const auto &inputBlockArg :
        llvm::enumerate(genericOp.getBody()->getArguments())) {
     Value residualOpReplacementArg =
@@ -400,8 +418,17 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
 
     Value peeledOpReplacementArg =
         peeledGenericOpBody->getArgument(inputBlockArg.index());
+
+    llvm::dbgs() << "Replace #" << inputBlockArg.index() << "\n";
+    llvm::dbgs() << "  - inputBlockArg: " << inputBlockArg.value() << "\n";
+    llvm::dbgs() << "  - peeledOpReplacementArg: " << peeledOpReplacementArg
+                 << "\n";
+
     inputBlockArg.value().replaceUsesWithIf(
         peeledOpReplacementArg, [&](OpOperand &use) {
+          if (use.getOwner()->getBlock() == peeledGenericOpBody) {
+            llvm::dbgs() << "  -> Replaced #" << inputBlockArg.index() << "\n";
+          }
           return use.getOwner()->getBlock() == peeledGenericOpBody;
         });
   }
@@ -426,16 +453,22 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
     unsigned peeledScalarOpNumResults = peeledScalarOperation->getNumResults();
     // llvm::dbgs() << "peeledScalarOpNumResults: " << peeledScalarOpNumResults
     // << "\n";
+
     scalarReplacements.reserve(peeledScalarOpNumResults);
     for (auto num : llvm::seq<unsigned>(0, peeledScalarOpNumResults))
-      scalarReplacements.push_back(
-          residualGenericOpBody->getArgument(num + origNumInputs));
+      scalarReplacements.push_back(residualGenericOpBody->getArgument(
+          num + origNumInputs + origNumOutputs));
     bool allUsesReplaced = false;
     rewriter.replaceOpWithinBlock(peeledScalarOperation, scalarReplacements,
                                   residualGenericOpBody, &allUsesReplaced);
     assert(!allUsesReplaced &&
            "peeled scalar operation is erased when it wasnt expected to be");
   }
+
+  llvm::dbgs() << "Peeled AFTER op:\n";
+  peeledGenericOp.dump();
+  llvm::dbgs() << "Residual AFTER op:\n";
+  residualGenericOp.dump();
 
   // Replace the original operation
   // genericOp.getOperation()->getParentOp()->dump();

@@ -247,7 +247,8 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
     }
     if (resultNumber ||
         ((origRegionOuts.size() == numScalarOpResults) &&
-         (!hasExternalUsers(genericOp, peeledScalarOperation)))) {
+         (!hasExternalUsers(genericOp, peeledScalarOperation)) &&
+         tpp::utils::hasMaxNumUsers(scalarOpResult.value(), 1))) {
       // llvm::dbgs() << "resultNumber: " << *resultNumber << "\n";
       resultNumber = resultNumber ? *resultNumber : scalarOpResult.index();
       newInitValues.push_back(

@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TPP/Dialect/Tpp/TppUtils.h"
 #include "TPP/Passes.h"
 #include "TPP/Transforms.h"
 
@@ -194,18 +195,30 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
   SmallVector<Value> newInitValues;
   SmallVector<Type> newResultTypes;
 
+  auto origRegionOuts = genericOp.getRegionOutputArgs();
+  auto numScalarOpResults = peeledScalarOperation->getResults().size();
+
+  int numOutUsers = 0;
+  if (origRegionOuts.size() == numScalarOpResults) {
+    for (auto &outArg : origRegionOuts) {
+      if (!tpp::utils::hasZeroUser(outArg))
+        ++numOutUsers;
+    }
+  }
+
   // Add as many new results as the number of results of the peeled scalar op.
-  for (auto scalarOpResult : peeledScalarOperation->getResults()) {
+  for (auto scalarOpResult :
+       llvm::enumerate(peeledScalarOperation->getResults())) {
     // If the result is yielded by the original op, use the operand, indexing
     // map and result type that correspond to the yielded value.
     // llvm::dbgs() << "scalarOpResult: " << scalarOpResult << "\n";
     std::optional<unsigned> resultNumber;
-    for (auto *user : scalarOpResult.getUsers()) {
+    for (auto *user : scalarOpResult.value().getUsers()) {
       // llvm::dbgs() << "user: " << *user << "\n";
       if (auto yieldOp = dyn_cast<YieldOp>(user)) {
         // Find the first use of the `scalarOpResult` in the yield op.
         for (OpOperand &yieldOperand : yieldOp->getOpOperands()) {
-          if (yieldOperand.get() == scalarOpResult) {
+          if (yieldOperand.get() == scalarOpResult.value()) {
             resultNumber = yieldOperand.getOperandNumber();
             break;
           }
@@ -214,20 +227,22 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
         break;
       }
     }
-    if (resultNumber) {
+    if (resultNumber ||
+        ((origRegionOuts.size() == numScalarOpResults) && (numOutUsers == 0))) {
       // llvm::dbgs() << "resultNumber: " << *resultNumber << "\n";
+      resultNumber = resultNumber ? *resultNumber : scalarOpResult.index();
       newInitValues.push_back(
           genericOp.getDpsInitOperand(*resultNumber)->get());
       OpResult result = genericOp.getResult(*resultNumber).cast<OpResult>();
       newResultTypes.push_back(result.getType());
-      peeledGenericOpIndexingMaps.push_back(
-          genericOp.getIndexingMapMatchingResult(result));
+      // peeledGenericOpIndexingMaps.push_back(
+      //     genericOp.getIndexingMapMatchingResult(result));
       continue;
     }
 
     // Fall back path, use an `init_tensor` and identity indexing map.
     // AffineMap indexingMap = rewriter.getMultiDimIdentityMap(domain.size());
-    auto elementType = scalarOpResult.getType();
+    auto elementType = scalarOpResult.value().getType();
     Value emptyBuf;
     if (genericOp.hasTensorSemantics()) {
       emptyBuf = rewriter.create<tensor::EmptyOp>(loc, domain, elementType);
@@ -273,6 +288,8 @@ GenericOp
 DecomposeLinalgOp::createResidualGenericOp(GenericOp genericOp,
                                            GenericOp peeledGenericOp,
                                            PatternRewriter &rewriter) const {
+  llvm::dbgs() << "INPUT generic op:\n";
+  genericOp.dump();
   /// Append all results from the peeledGenericOps as `ins` operand for the
   /// residual generic op.
   bool isTensor = genericOp.hasTensorSemantics();
@@ -367,6 +384,8 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
   GenericOp peeledGenericOp = createPeeledGenericOp(genericOp, rewriter);
   GenericOp residualGenericOp =
       createResidualGenericOp(genericOp, peeledGenericOp, rewriter);
+  llvm::dbgs() << "CREATED generic op:\n";
+  residualGenericOp.dump();
 
   /// Move the first statement of the original operation into the body of the
   /// generic op for the peeled operation.
@@ -378,6 +397,22 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
       peeledGenericOpBody->begin(), body->getOperations(), body->begin());
   residualGenericOpBody->getOperations().splice(residualGenericOpBody->begin(),
                                                 body->getOperations());
+
+  // for (auto inputOp : residualGenericOp.getRegionInputArgs()) {
+  //   for (auto outputOp : residualGenericOp.getRegionOutputArgs()) {
+  //     llvm::dbgs() << "inputOp: " << inputOp << "\n";
+  //     llvm::dbgs() << "outputOp: " << outputOp << "\n";
+  //     if (residualGenericOp.getMatchingOpOperand(inputOp)->get() ==
+  //         residualGenericOp.getMatchingOpOperand(outputOp)->get()) {
+  //       llvm::dbgs() << "### Matched input and output\n";
+  //       // auto inArg = residualGenericOp.getMatchingBlockArgument(inputOp);
+  //       // auto outArg =
+  //       residualGenericOp.getMatchingBlockArgument(outputOp);
+  //       // inArg.replaceAllUsesWith(outArg);
+  //       inputOp.replaceAllUsesWith(outputOp);
+  //     }
+  //   }
+  // }
 
   Operation *peeledScalarOperation = &(*peeledGenericOpBody->begin());
   auto *yieldOp = residualGenericOpBody->getTerminator();
@@ -463,6 +498,61 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
                                   residualGenericOpBody, &allUsesReplaced);
     assert(!allUsesReplaced &&
            "peeled scalar operation is erased when it wasnt expected to be");
+  }
+
+  // llvm::dbgs() << "ARGS analysis\n";
+  // for (auto inputOp :
+  //      llvm::enumerate(residualGenericOp.getDpsInputOperands())) {
+  //   for (auto outputOp :
+  //        llvm::enumerate(residualGenericOp.getDpsInitOperands())) {
+  //     llvm::dbgs() << "inputOp: " << inputOp.value()->get() << "\n";
+  //     llvm::dbgs() << "outputOp: " << outputOp.value()->get() << "\n";
+  //     if (inputOp.value()->get() == outputOp.value()->get()) {
+  //       llvm::dbgs() << "### Matched input: "
+  //                    << residualGenericOpBody->getArgument(inputOp.index())
+  //                    << "\n";
+  //       llvm::dbgs() << "and output: "
+  //                    << residualGenericOpBody->getArgument(
+  //                           residualGenericOp.getNumDpsInputs() +
+  //                           outputOp.index())
+  //                    << "\n";
+  //       auto inArg = residualGenericOpBody->getArgument(inputOp.index());
+  //       auto outArg = residualGenericOpBody->getArgument(
+  //           residualGenericOp.getNumDpsInputs() + outputOp.index());
+  //       llvm::dbgs() << "InputNumUsers: "
+  //                    << std::distance(inArg.getUsers().begin(),
+  //                                     inArg.getUsers().end())
+  //                    << "\n";
+  //       llvm::dbgs() << "OutputNumUsers: "
+  //                    << std::distance(outArg.getUsers().begin(),
+  //                                     outArg.getUsers().end())
+  //                    << "\n";
+  //       // auto inArg = residualGenericOp.getMatchingBlockArgument(inputOp);
+  //       // auto outArg =
+  //       // residualGenericOp.getMatchingBlockArgument(outputOp);
+  //       inArg.replaceAllUsesWith(outArg);
+  //       // residualGenericOpBody->getArgument(inputOp.index())
+  //       //     .replaceAllUsesWith(residualGenericOpBody->getArgument(
+  //       //         residualGenericOp.getNumDpsInputs() + outputOp.index()));
+  //     }
+  //   }
+  // }
+
+  llvm::dbgs() << "ARGS analysis\n";
+  for (auto inputOp : residualGenericOp.getRegionInputArgs()) {
+    for (auto outputOp : residualGenericOp.getRegionOutputArgs()) {
+      llvm::dbgs() << "inputOp: " << inputOp << "\n";
+      llvm::dbgs() << "outputOp: " << outputOp << "\n";
+      if (residualGenericOp.getMatchingOpOperand(inputOp)->get() ==
+          residualGenericOp.getMatchingOpOperand(outputOp)->get()) {
+        llvm::dbgs() << "### Matched input and output\n";
+        // auto inArg = residualGenericOp.getMatchingBlockArgument(inputOp);
+        // auto outArg =
+        // residualGenericOp.getMatchingBlockArgument(outputOp);
+        // inArg.replaceAllUsesWith(outArg);
+        inputOp.replaceAllUsesWith(outputOp);
+      }
+    }
   }
 
   llvm::dbgs() << "Peeled AFTER op:\n";

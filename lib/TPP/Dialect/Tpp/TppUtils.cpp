@@ -257,6 +257,10 @@ bool hasMappingToTppConditions(linalg::GenericOp linalgOp) {
   return hasStaticShape(linalgOp);
 }
 
+int getNumUsers(Value val) {
+  return std::distance(val.getUsers().begin(), val.getUsers().end());
+}
+
 bool hasOneUser(Value val) {
   return std::distance(val.getUsers().begin(), val.getUsers().end()) == 1;
 }

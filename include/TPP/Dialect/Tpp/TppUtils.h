@@ -63,6 +63,8 @@ bool hasMaxfZeroOp(linalg::LinalgOp linalgOp);
 // operation.
 bool isMaxfZeroOp(Operation *op);
 
+int getNumUsers(Value val);
+
 bool hasOneUser(Value val);
 
 bool hasZeroUser(Value val);

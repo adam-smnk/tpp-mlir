@@ -56,6 +56,20 @@ bool hasMatmulBody(linalg::LinalgOp linalgOp);
 // Returns true if the linalg operation has copy semantics.
 bool hasCopySemantics(linalg::LinalgOp linalgOp);
 
+// Returns true if linalg generic region contains a maxf(x, 0) operation.
+bool hasMaxfZeroOp(linalg::LinalgOp linalgOp);
+
+// Returns true if the operation within a linalg generic region is a maxf(x, 0)
+// operation.
+bool isMaxfZeroOp(Operation *op);
+
+bool hasOneUser(Value val);
+
+bool hasZeroUser(Value val);
+
+// Returns true if the value has no more than the specified number of users.
+bool hasMaxNumUsers(Value val, int numUsers);
+
 // Returns true if the linalg operation can convert to a tpp.matmul.
 bool isTppMatmul(linalg::LinalgOp linalgOp);
 

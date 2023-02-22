@@ -257,11 +257,11 @@ bool hasMappingToTppConditions(linalg::GenericOp linalgOp) {
   return hasStaticShape(linalgOp);
 }
 
-static bool hasOneUser(Value val) {
+bool hasOneUser(Value val) {
   return std::distance(val.getUsers().begin(), val.getUsers().end()) == 1;
 }
 
-static bool hasZeroUser(Value val) {
+bool hasZeroUser(Value val) {
   return std::distance(val.getUsers().begin(), val.getUsers().end()) == 0;
 }
 
@@ -353,7 +353,7 @@ static bool isUnaryOp(linalg::GenericOp linalgOp) {
   return false;
 }
 
-static bool hasMaxfZeroOp(linalg::LinalgOp linalgOp) {
+bool hasMaxfZeroOp(linalg::LinalgOp linalgOp) {
   if (!isa<linalg::GenericOp>(linalgOp))
     return false;
 

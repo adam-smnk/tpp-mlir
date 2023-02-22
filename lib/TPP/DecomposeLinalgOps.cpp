@@ -245,6 +245,8 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
         break;
       }
     }
+    // TODO: check that when there is only one bodyOp result user,
+    // the user is the next body operation
     if (resultNumber ||
         ((origRegionOuts.size() == numScalarOpResults) &&
          (!hasExternalUsers(genericOp, peeledScalarOperation)) &&
@@ -272,6 +274,9 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
         sizes.push_back(*getConstantIntValue(shapeSize));
       }
       auto allocationType = MemRefType::get(sizes, elementType);
+      // TODO: automatically deallocate the temporary output buffers
+      //       -- place allocs and new generic before the original genericOp
+      //       -- place all deallocs after the original genericOp
       emptyBuf = rewriter.create<memref::AllocOp>(loc, allocationType);
     }
     // auto fillOp = rewriter.create<linalg::FillOp>(

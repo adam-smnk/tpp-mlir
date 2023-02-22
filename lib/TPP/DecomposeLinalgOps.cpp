@@ -173,6 +173,24 @@ static Value getZero(OpBuilder &b, Location loc, Type elementType) {
       loc, APFloat::getZero(floatType.getFloatSemantics()), floatType);
 }
 
+bool hasExternalUsers(GenericOp genericOp, Operation *bodyOp) {
+  assert(bodyOp->getParentOp() == genericOp.getOperation() &&
+         "expected body op to belong to the generic");
+  for (auto outOperand : genericOp.getRegionOutputArgs()) {
+    int numUses = 0;
+    for (auto operand : bodyOp->getOperands()) {
+      llvm::dbgs() << "operand: " << operand << "\n";
+      llvm::dbgs() << "outOperand: " << outOperand << "\n";
+      if (operand == outOperand)
+        ++numUses;
+    }
+    if (numUses != (tpp::utils::getNumUsers(outOperand)))
+      return true;
+  }
+
+  return false;
+}
+
 GenericOp
 DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
                                          PatternRewriter &rewriter) const {
@@ -228,7 +246,8 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
       }
     }
     if (resultNumber ||
-        ((origRegionOuts.size() == numScalarOpResults) && (numOutUsers == 0))) {
+        ((origRegionOuts.size() == numScalarOpResults) &&
+         (!hasExternalUsers(genericOp, peeledScalarOperation)))) {
       // llvm::dbgs() << "resultNumber: " << *resultNumber << "\n";
       resultNumber = resultNumber ? *resultNumber : scalarOpResult.index();
       newInitValues.push_back(

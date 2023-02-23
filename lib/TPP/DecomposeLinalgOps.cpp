@@ -173,21 +173,19 @@ static Value getZero(OpBuilder &b, Location loc, Type elementType) {
       loc, APFloat::getZero(floatType.getFloatSemantics()), floatType);
 }
 
-bool canReuseOutput(GenericOp genericOp, Operation *bodyOp,
-                    Value bodyOpResult) {
+bool canReuseOutput(GenericOp genericOp, Value genericOpOutput,
+                    Operation *bodyOp, Value bodyOpResult) {
   assert(bodyOp->getParentOp() == genericOp.getOperation() &&
          "expected body op to belong to the generic");
-  for (auto outOperand : genericOp.getRegionOutputArgs()) {
-    int numUses = 0;
-    for (auto operand : bodyOp->getOperands()) {
-      llvm::dbgs() << "operand: " << operand << "\n";
-      llvm::dbgs() << "outOperand: " << outOperand << "\n";
-      if (operand == outOperand)
-        ++numUses;
-    }
-    if (numUses != (tpp::utils::getNumUsers(outOperand)))
-      return false;
+  int numUses = 0;
+  for (auto operand : bodyOp->getOperands()) {
+    llvm::dbgs() << "operand: " << operand << "\n";
+    llvm::dbgs() << "outOperand: " << genericOpOutput << "\n";
+    if (operand == genericOpOutput)
+      ++numUses;
   }
+  if (numUses != (tpp::utils::getNumUsers(genericOpOutput)))
+    return false;
 
   auto numOpResultUsers = tpp::utils::getNumUsers(bodyOpResult);
   if (numOpResultUsers > 1) {
@@ -265,11 +263,14 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
         break;
       }
     }
+
     // TODO: check that when there is only one bodyOp result user,
     // the user is the next body operation
-    if (resultNumber || ((origRegionOuts.size() == numScalarOpResults) &&
-                         canReuseOutput(genericOp, peeledScalarOperation,
-                                        scalarOpResult.value()))) {
+    if (resultNumber ||
+        ((origRegionOuts.size() >= numScalarOpResults) &&
+         canReuseOutput(genericOp,
+                        genericOp.getRegionOutputArgs()[scalarOpResult.index()],
+                        peeledScalarOperation, scalarOpResult.value()))) {
       // llvm::dbgs() << "resultNumber: " << *resultNumber << "\n";
       resultNumber = resultNumber ? *resultNumber : scalarOpResult.index();
       newInitValues.push_back(

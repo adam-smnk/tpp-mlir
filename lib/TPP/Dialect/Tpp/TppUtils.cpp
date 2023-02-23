@@ -357,6 +357,14 @@ static bool isUnaryOp(linalg::GenericOp linalgOp) {
   return false;
 }
 
+bool isMaxfZeroOp(Operation *op) {
+  if (auto maxfOp = dyn_cast_or_null<arith::MaxFOp>(op)) {
+    // Check both operands if either one is a zero filled tensor.
+    if (isZeroTensor(maxfOp.getLhs()) || isZeroTensor(maxfOp.getRhs()))
+      return true;
+  }
+}
+
 bool hasMaxfZeroOp(linalg::LinalgOp linalgOp) {
   if (!isa<linalg::GenericOp>(linalgOp))
     return false;
@@ -366,11 +374,8 @@ bool hasMaxfZeroOp(linalg::LinalgOp linalgOp) {
     return false;
 
   for (Operation &op : genOp.getRegion().front()) {
-    if (auto maxfOp = dyn_cast_or_null<arith::MaxFOp>(op)) {
-      // Check both operands if either one is a zero filled tensor.
-      if (isZeroTensor(maxfOp.getLhs()) || isZeroTensor(maxfOp.getRhs()))
-        return true;
-    }
+    if (isMaxfZeroOp(&op))
+      return true;
   }
 
   return false;

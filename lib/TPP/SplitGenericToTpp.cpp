@@ -49,7 +49,9 @@ bool isTppAddMappable(Operation *op) {
   if (!genOp)
     return false;
 
-  return isAddOp(op) && tpp::utils::allOperandsHaveSameType(genOp) &&
+  return isAddOp(op) &&
+         tpp::utils::allOperandsHaveSameShapeAndStrides(
+             genOp->getOperands().getTypes()) &&
          tpp::utils::allIndexingsAreProjectedPermutation(genOp);
 }
 

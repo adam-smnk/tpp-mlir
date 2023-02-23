@@ -31,10 +31,6 @@ namespace utils {
 // dimensions.
 bool hasStaticShape(linalg::LinalgOp linalgOp);
 
-// Returns true if all the operands of the current linalgOp are shape type and
-// have the same statically-known shape.
-bool allOperandsHaveSameType(linalg::GenericOp linalgOp);
-
 // Returns true if the linalg operation indexing maps are projected permutation
 // maps.
 bool allIndexingsAreProjectedPermutation(linalg::GenericOp genericOp);
@@ -56,12 +52,11 @@ bool hasMatmulBody(linalg::LinalgOp linalgOp);
 // Returns true if the linalg operation has copy semantics.
 bool hasCopySemantics(linalg::LinalgOp linalgOp);
 
+// Returns true if the op is a maxf(x, 0) operation.
+bool isMaxfZeroOp(Operation *op);
+
 // Returns true if linalg generic region contains a maxf(x, 0) operation.
 bool hasMaxfZeroOp(linalg::LinalgOp linalgOp);
-
-// Returns true if the operation within a linalg generic region is a maxf(x, 0)
-// operation.
-bool isMaxfZeroOp(Operation *op);
 
 int getNumUsers(Value val);
 

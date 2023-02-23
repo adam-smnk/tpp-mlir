@@ -264,8 +264,6 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
       }
     }
 
-    // TODO: check that when there is only one bodyOp result user,
-    // the user is the next body operation
     if (resultNumber ||
         ((origRegionOuts.size() >= numScalarOpResults) &&
          canReuseOutput(genericOp,

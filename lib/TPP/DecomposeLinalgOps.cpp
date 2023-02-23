@@ -179,8 +179,8 @@ bool canReuseOutput(GenericOp genericOp, Value genericOpOutput,
          "expected body op to belong to the generic");
   int numUses = 0;
   for (auto operand : bodyOp->getOperands()) {
-    llvm::dbgs() << "operand: " << operand << "\n";
-    llvm::dbgs() << "outOperand: " << genericOpOutput << "\n";
+    // llvm::dbgs() << "operand: " << operand << "\n";
+    // llvm::dbgs() << "outOperand: " << genericOpOutput << "\n";
     if (operand == genericOpOutput)
       ++numUses;
   }
@@ -336,8 +336,8 @@ GenericOp
 DecomposeLinalgOp::createResidualGenericOp(GenericOp genericOp,
                                            GenericOp peeledGenericOp,
                                            PatternRewriter &rewriter) const {
-  llvm::dbgs() << "INPUT generic op:\n";
-  genericOp.dump();
+  // llvm::dbgs() << "INPUT generic op:\n";
+  // genericOp.dump();
   /// Append all results from the peeledGenericOps as `ins` operand for the
   /// residual generic op.
   bool isTensor = genericOp.hasTensorSemantics();
@@ -432,8 +432,8 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
   GenericOp peeledGenericOp = createPeeledGenericOp(genericOp, rewriter);
   GenericOp residualGenericOp =
       createResidualGenericOp(genericOp, peeledGenericOp, rewriter);
-  llvm::dbgs() << "CREATED generic op:\n";
-  residualGenericOp.dump();
+  // llvm::dbgs() << "CREATED generic op:\n";
+  // residualGenericOp.dump();
 
   /// Move the first statement of the original operation into the body of the
   /// generic op for the peeled operation.
@@ -484,12 +484,12 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
   /// original operation to the block arguments of the newly created operation.
   unsigned origNumInputs = genericOp.getNumDpsInputs();
   unsigned origNumOutputs = genericOp.getNumDpsInits();
-  llvm::dbgs() << "Orig op:\n";
-  genericOp.dump();
-  llvm::dbgs() << "Peeled op:\n";
-  peeledGenericOp.dump();
-  llvm::dbgs() << "Residual op:\n";
-  residualGenericOp.dump();
+  // llvm::dbgs() << "Orig op:\n";
+  // genericOp.dump();
+  // llvm::dbgs() << "Peeled op:\n";
+  // peeledGenericOp.dump();
+  // llvm::dbgs() << "Residual op:\n";
+  // residualGenericOp.dump();
   for (const auto &inputBlockArg :
        llvm::enumerate(genericOp.getBody()->getArguments())) {
     Value residualOpReplacementArg =
@@ -502,15 +502,16 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
     Value peeledOpReplacementArg =
         peeledGenericOpBody->getArgument(inputBlockArg.index());
 
-    llvm::dbgs() << "Replace #" << inputBlockArg.index() << "\n";
-    llvm::dbgs() << "  - inputBlockArg: " << inputBlockArg.value() << "\n";
-    llvm::dbgs() << "  - peeledOpReplacementArg: " << peeledOpReplacementArg
-                 << "\n";
+    // llvm::dbgs() << "Replace #" << inputBlockArg.index() << "\n";
+    // llvm::dbgs() << "  - inputBlockArg: " << inputBlockArg.value() << "\n";
+    // llvm::dbgs() << "  - peeledOpReplacementArg: " << peeledOpReplacementArg
+    //              << "\n";
 
     inputBlockArg.value().replaceUsesWithIf(
         peeledOpReplacementArg, [&](OpOperand &use) {
           if (use.getOwner()->getBlock() == peeledGenericOpBody) {
-            llvm::dbgs() << "  -> Replaced #" << inputBlockArg.index() << "\n";
+            // llvm::dbgs() << "  -> Replaced #" << inputBlockArg.index() <<
+            // "\n";
           }
           return use.getOwner()->getBlock() == peeledGenericOpBody;
         });
@@ -586,14 +587,14 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
   //   }
   // }
 
-  llvm::dbgs() << "ARGS analysis\n";
+  // llvm::dbgs() << "ARGS analysis\n";
   for (auto inputOp : residualGenericOp.getRegionInputArgs()) {
     for (auto outputOp : residualGenericOp.getRegionOutputArgs()) {
-      llvm::dbgs() << "inputOp: " << inputOp << "\n";
-      llvm::dbgs() << "outputOp: " << outputOp << "\n";
+      // llvm::dbgs() << "inputOp: " << inputOp << "\n";
+      // llvm::dbgs() << "outputOp: " << outputOp << "\n";
       if (residualGenericOp.getMatchingOpOperand(inputOp)->get() ==
           residualGenericOp.getMatchingOpOperand(outputOp)->get()) {
-        llvm::dbgs() << "### Matched input and output\n";
+        // llvm::dbgs() << "### Matched input and output\n";
         // auto inArg = residualGenericOp.getMatchingBlockArgument(inputOp);
         // auto outArg =
         // residualGenericOp.getMatchingBlockArgument(outputOp);
@@ -603,10 +604,10 @@ DecomposeLinalgOp::matchAndRewrite(GenericOp genericOp,
     }
   }
 
-  llvm::dbgs() << "Peeled AFTER op:\n";
-  peeledGenericOp.dump();
-  llvm::dbgs() << "Residual AFTER op:\n";
-  residualGenericOp.dump();
+  // llvm::dbgs() << "Peeled AFTER op:\n";
+  // peeledGenericOp.dump();
+  // llvm::dbgs() << "Residual AFTER op:\n";
+  // residualGenericOp.dump();
 
   // Replace the original operation
   // genericOp.getOperation()->getParentOp()->dump();

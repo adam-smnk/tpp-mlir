@@ -173,7 +173,8 @@ static Value getZero(OpBuilder &b, Location loc, Type elementType) {
       loc, APFloat::getZero(floatType.getFloatSemantics()), floatType);
 }
 
-bool hasExternalUsers(GenericOp genericOp, Operation *bodyOp) {
+bool canReuseOutput(GenericOp genericOp, Operation *bodyOp,
+                    Value bodyOpResult) {
   assert(bodyOp->getParentOp() == genericOp.getOperation() &&
          "expected body op to belong to the generic");
   for (auto outOperand : genericOp.getRegionOutputArgs()) {
@@ -185,10 +186,29 @@ bool hasExternalUsers(GenericOp genericOp, Operation *bodyOp) {
         ++numUses;
     }
     if (numUses != (tpp::utils::getNumUsers(outOperand)))
-      return true;
+      return false;
   }
 
-  return false;
+  auto numOpResultUsers = tpp::utils::getNumUsers(bodyOpResult);
+  if (numOpResultUsers > 1) {
+    return false;
+  }
+
+  if (numOpResultUsers == 1) {
+    Operation *nextBodyOp = nullptr;
+    auto *body = genericOp.getBody();
+    for (auto op = body->begin(); op != std::prev(body->end()); ++op) {
+      if (&(*op) == bodyOp) {
+        nextBodyOp = &(*std::next(op));
+        break;
+      }
+    }
+
+    if (!nextBodyOp || (*bodyOpResult.getUsers().begin() != nextBodyOp))
+      return false;
+  }
+
+  return true;
 }
 
 GenericOp
@@ -247,10 +267,9 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
     }
     // TODO: check that when there is only one bodyOp result user,
     // the user is the next body operation
-    if (resultNumber ||
-        ((origRegionOuts.size() == numScalarOpResults) &&
-         (!hasExternalUsers(genericOp, peeledScalarOperation)) &&
-         tpp::utils::hasMaxNumUsers(scalarOpResult.value(), 1))) {
+    if (resultNumber || ((origRegionOuts.size() == numScalarOpResults) &&
+                         canReuseOutput(genericOp, peeledScalarOperation,
+                                        scalarOpResult.value()))) {
       // llvm::dbgs() << "resultNumber: " << *resultNumber << "\n";
       resultNumber = resultNumber ? *resultNumber : scalarOpResult.index();
       newInitValues.push_back(

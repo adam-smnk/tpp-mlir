@@ -363,6 +363,8 @@ bool isMaxfZeroOp(Operation *op) {
     if (isZeroTensor(maxfOp.getLhs()) || isZeroTensor(maxfOp.getRhs()))
       return true;
   }
+
+  return false;
 }
 
 bool hasMaxfZeroOp(linalg::LinalgOp linalgOp) {

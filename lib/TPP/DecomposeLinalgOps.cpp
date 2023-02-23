@@ -273,11 +273,16 @@ DecomposeLinalgOp::createPeeledGenericOp(GenericOp genericOp,
       for (auto shapeSize : domain) {
         sizes.push_back(*getConstantIntValue(shapeSize));
       }
+
       auto allocationType = MemRefType::get(sizes, elementType);
-      // TODO: automatically deallocate the temporary output buffers
-      //       -- place allocs and new generic before the original genericOp
-      //       -- place all deallocs after the original genericOp
       emptyBuf = rewriter.create<memref::AllocOp>(loc, allocationType);
+
+      // Release the temporary buffer after the last split generic op
+      {
+        OpBuilder::InsertionGuard g(rewriter);
+        rewriter.setInsertionPointAfter(genericOp.getOperation());
+        rewriter.create<memref::DeallocOp>(loc, emptyBuf);
+      }
     }
     // auto fillOp = rewriter.create<linalg::FillOp>(
     //     loc, getZero(rewriter, loc, elementType), emptyBuf);

@@ -112,6 +112,47 @@ struct HeapToStackAllocation : public OpRewritePattern<memref::AllocOp> {
         return use.getOwner()->getBlock() != scopeBlock;
       });
 
+    SmallVector<int> newResultsPos;
+    SmallVector<Type> newResultTypes;
+    for (auto [idx, res] : llvm::enumerate(scope.getResults())) {
+      llvm::SmallVector<Operation *, 4> users(res.getUsers().begin(),
+                                              res.getUsers().end());
+      if (users.size() != 0) {
+        newResultsPos.push_back(idx);
+        newResultTypes.push_back(res.getType());
+      }
+    }
+
+    rewriter.setInsertionPointAfter(scope);
+    auto newScope = rewriter.create<memref::AllocaScopeOp>(loc, newResultTypes);
+    Block *newScopeBlock = rewriter.createBlock(&newScope.getBodyRegion());
+
+    SmallVector<Value> newResults;
+    auto yield = scope.getBodyRegion().front().getTerminator();
+    for (auto idx : newResultsPos)
+      newResults.push_back(yield->getOperand(idx));
+    rewriter.eraseOp(yield);
+
+    rewriter.mergeBlocks(&scope.getBodyRegion().front(),
+                         &newScope.getBodyRegion().front(), {});
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToEnd(newScopeBlock);
+
+      rewriter.create<memref::AllocaScopeReturnOp>(loc, newResults);
+    }
+
+    auto oldScopeResults = scope.getResults();
+    auto newScopeResults = newScope.getResults();
+    for (auto [idx, pos] : llvm::enumerate(newResultsPos)) {
+      oldScopeResults[pos].replaceUsesWithIf(
+          newScopeResults[idx], [&](OpOperand &use) {
+            return use.getOwner()->getBlock() != newScopeBlock;
+          });
+    }
+
+    rewriter.eraseOp(scope);
+
     return success();
   }
 

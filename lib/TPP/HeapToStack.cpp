@@ -55,12 +55,62 @@ struct HeapToStackAllocation : public OpRewritePattern<memref::AllocOp> {
       return rewriter.notifyMatchFailure(
           alloc, "Expected to find matching deallocator");
 
+    // Ensure that the memory allocation and deallocation happens within same
+    // scope.
+    auto region = alloc->getParentRegion();
+    if (region != deallocOp->getParentRegion())
+      return rewriter.notifyMatchFailure(
+          alloc, "Expected deallocator to be in the same scope");
+
+    SmallVector<Operation *> regionOps;
+    SmallVector<Type> resultTypes;
+    bool isNewScope = false;
+    for (auto &op : region->getOps()) {
+      if (&op == deallocOp)
+        break;
+      if (isNewScope) {
+        regionOps.push_back(&op);
+        for (Type resType : op.getResultTypes()) {
+          resultTypes.push_back(resType);
+        }
+      }
+      if (&op == alloc.getOperation())
+        isNewScope = true;
+    }
+
     // Remove the deallocator as stack lifetime is managed automatically.
     rewriter.eraseOp(deallocOp);
 
+    auto loc = alloc.getLoc();
+    auto scope = rewriter.create<memref::AllocaScopeOp>(loc, resultTypes);
+    Block *scopeBlock = rewriter.createBlock(&scope.getBodyRegion());
+
     // Replace the original buffer with an equivalent stack allocation.
-    rewriter.replaceOpWithNewOp<memref::AllocaOp>(
+    auto alloca = rewriter.replaceOpWithNewOp<memref::AllocaOp>(
         alloc, alloc.getMemref().getType(), alloc.getAlignmentAttr());
+
+    SmallVector<Value> results;
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToEnd(scopeBlock);
+
+      alloca->moveBefore(scopeBlock, scopeBlock->end());
+
+      for (auto *op : regionOps) {
+        op->moveBefore(scopeBlock, scopeBlock->end());
+        for (Value result : op->getResults()) {
+          results.push_back(result);
+        }
+      }
+
+      rewriter.create<memref::AllocaScopeReturnOp>(loc, results);
+    }
+
+    // Swap bench results with loop results.
+    for (auto [res, scopeRes] : llvm::zip_equal(results, scope.getResults()))
+      res.replaceUsesWithIf(scopeRes, [&](OpOperand &use) {
+        return use.getOwner()->getBlock() != scopeBlock;
+      });
 
     return success();
   }

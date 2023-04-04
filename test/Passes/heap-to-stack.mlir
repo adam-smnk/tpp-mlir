@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -heap-to-stack -split-input-file | FileCheck %s
+// RUN: tpp-opt %s -heap-to-stack -canonicalize -split-input-file | FileCheck %s
 
 func.func @alloc_small_1d(%arg0: memref<8x8xbf16>, %arg1: memref<8xbf16>) -> memref<8xbf16> {
   %alloc = memref.alloc() : memref<8xbf16>
@@ -100,3 +100,31 @@ func.func @alignment(%arg0: memref<8x8xbf16>, %arg1: memref<8x8xbf16>) -> memref
 // CHECK: memref.alloca() {alignment = 64 : i64}
 // CHECK: linalg.matmul
 // CHECK-NOT: memref.dealloc
+
+// -----
+
+func.func @scope_return(%arg0: memref<8x8xbf16>, %arg1: memref<8x8xbf16>, %arg2: memref<8x8xbf16>) -> memref<8x8xbf16> {
+  %alloc = memref.alloc() : memref<8x8xbf16>
+  %alloc1 = memref.alloc() : memref<8x8xbf16>
+  linalg.matmul ins(%arg0, %alloc : memref<8x8xbf16>, memref<8x8xbf16>) outs(%arg1 : memref<8x8xbf16>)
+  linalg.copy ins(%arg1 : memref<8x8xbf16>) outs(%alloc1 : memref<8x8xbf16>)
+  memref.dealloc %alloc : memref<8x8xbf16>
+  linalg.matmul ins(%arg0, %alloc1 : memref<8x8xbf16>, memref<8x8xbf16>) outs(%arg2 : memref<8x8xbf16>)
+  return %arg2 : memref<8x8xbf16>
+}
+
+// CHECK-LABEL: func.func @scope_return(
+// CHECK-SAME:  %[[ARG0:[^ ]+]]: memref<8x8xbf16>,
+// CHECK-SAME:  %[[ARG1:[^ ]+]]: memref<8x8xbf16>,
+// CHECK-SAME:  %[[ARG2:[^ ]+]]: memref<8x8xbf16>)
+// CHECK:     %[[scopeRet:.+]] = memref.alloca_scope
+// CHECK-NOT:   memref.alloc()
+// CHECK:       %[[alloca:.+]] = memref.alloca()
+// CHECK:       %[[alloc:.+]] = memref.alloc()
+// CHECK:       linalg.matmul ins(%[[ARG0]], %[[alloca]]
+// CHECK:       linalg.copy
+// CHECK-NOT:   memref.dealloc
+// CHECK:       memref.alloca_scope.return %[[alloc]]
+// CHECK:     }
+// CHECK-NOT: memref.dealloc
+// CHECK: linalg.matmul ins(%[[ARG0]], %[[scopeRet]]

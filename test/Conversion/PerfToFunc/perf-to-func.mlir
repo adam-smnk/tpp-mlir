@@ -48,6 +48,16 @@ func.func @func_mean(%arg0: memref<?xf64>) {
 
 // -----
 
+// CHECK-DAG: func.func private @perf_median(%[[arg0:.*]]: memref<*xf64>) -> f64 attributes {llvm.emit_c_interface}
+// CHECK-LABEL: @func_mean
+func.func @func_median(%arg0: memref<?xf64>) {
+  // CHECK: call @perf_median({{.*}})
+  %mean = perf.mean(%arg0 : memref<?xf64>) : f64
+  return
+}
+
+// -----
+
 // CHECK:     func.func private @perf_stdev(%[[arg0:.*]]: memref<*xf64>, %[[mean:.*]]: f64) -> f64 {
 // CHECK-DAG:   %[[lb:.*]] = arith.constant 0 : index
 // CHECK-DAG:   %[[step:.*]] = arith.constant 1 : index

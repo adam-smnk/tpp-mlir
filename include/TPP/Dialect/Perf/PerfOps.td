@@ -11,9 +11,11 @@
 
 include "TPP/Dialect/Perf/PerfDialect.td"
 include "TPP/Dialect/Perf/PerfTypes.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // StartTimerOp
@@ -106,7 +108,7 @@ def Perf_BenchOp : Perf_Op<"bench",
                           "$_self",
                           "bodyResults",
                           "getRegion().front().getTerminator()->getOperandTypes()">]> {
-  let summary = "Benchmark the enclosed code.";
+  let summary = "Measure performance of the enclosed code.";
   let description = [{
     The `perf.bench` operation generates benchmarking code
     around the enclosed region.
@@ -232,6 +234,71 @@ def Perf_YieldOp : Perf_Op<"yield", [ HasParent<"BenchOp">,
 
   let assemblyFormat =
     [{  attr-dict ($operands^ `:` type($operands))? }];
+}
+
+//===----------------------------------------------------------------------===//
+// TimeOp
+//===----------------------------------------------------------------------===//
+
+def Perf_TimeOp : Perf_Op<"time",
+    [CallOpInterface, MemRefsNormalizable,
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Measure performance of a function call.";
+  let description = [{
+    Measure performance of the function call.
+  }];
+
+  let arguments = (ins I64:$numIters,
+                       RankedOrUnrankedMemRefOf<[F64]>:$deltas,
+                       FlatSymbolRefAttr:$callee,
+                       Variadic<AnyType>:$callee_operands);
+  let results = (outs Variadic<AnyType>);
+
+  let assemblyFormat = [{
+    `(` $numIters `,` $deltas `:` type($deltas) `)`
+    $callee `(` $callee_operands `)` attr-dict `:` functional-type($callee_operands, results)
+  }];
+
+  let builders = [
+    OpBuilder<(ins "Value":$numIters, "Value":$deltas,
+      "func::FuncOp":$callee, CArg<"ValueRange", "{}">:$callee_operands), [{
+        $_state.addOperands({numIters, deltas});
+        $_state.addOperands(callee_operands);
+        $_state.addAttribute("callee", SymbolRefAttr::get(callee));
+        $_state.addTypes(callee.getFunctionType().getResults());
+    }]>,
+    OpBuilder<(ins "Value":$numIters, "Value":$deltas,
+      "SymbolRefAttr":$callee, "TypeRange":$results,
+      CArg<"ValueRange", "{}">:$callee_operands), [{
+        $_state.addOperands({numIters, deltas});
+        $_state.addOperands(callee_operands);
+        $_state.addAttribute("callee", callee);
+        $_state.addTypes(results);
+    }]>,
+    OpBuilder<(ins "Value":$numIters, "Value":$deltas,
+      "StringAttr":$callee, "TypeRange":$results,
+      CArg<"ValueRange", "{}">:$callee_operands), [{
+        build($_builder, $_state, numIters, deltas,
+              SymbolRefAttr::get(callee), results, callee_operands);
+    }]>,
+    OpBuilder<(ins "Value":$numIters, "Value":$deltas,
+      "StringRef":$callee, "TypeRange":$results,
+      CArg<"ValueRange", "{}">:$callee_operands), [{
+        build($_builder, $_state, numIters, deltas,
+              StringAttr::get($_builder.getContext(), callee), results, callee_operands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() {
+      return getCalleeOperands();
+    }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() {
+      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

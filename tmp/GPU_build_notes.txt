@@ -1,0 +1,109 @@
+### Build LLVM with GPU support
+cmake -G Ninja ../llvm \
+   -DLLVM_ENABLE_PROJECTS=mlir \
+   -DLLVM_BUILD_EXAMPLES=ON \
+   -DLLVM_INSTALL_UTILS=ON \
+   -DLLVM_TARGETS_TO_BUILD="X86;NVPTX;AMDGPU" \
+   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+   -DLLVM_ENABLE_ASSERTIONS=ON \
+   -DCMAKE_C_COMPILER=clang \
+   -DCMAKE_CXX_COMPILER=clang++ \
+   -DLLVM_USE_LINKER=mold \
+   -DLLVM_CCACHE_BUILD=ON \
+   -DCMAKE_CUDA_COMPILER=nvcc \
+   -DMLIR_ENABLE_CUDA_RUNNER=ON \
+   -DMLIR_ENABLE_CUDA_CONVERSIONS=ON \
+   -DMLIR_ENABLE_SPIRV_CPU_RUNNER=ON \
+   -DMLIR_ENABLE_VULKAN_RUNNER=ON
+
+# extra flags?
+-DMLIR_ENABLE_CUDA_CONVERSIONS=ON
+
+### Linalg to parallel
+-convert-linalg-to-parallel-loops
+
+### Minimum passes for scf.parallel to GPU
+-gpu-map-parallel-loops -convert-parallel-loops-to-gpu -gpu-kernel-outlining
+
+### MLIR CUDA mlir-cpu-runner
+mlir-cpu-runner -e main -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_cuda_runtime.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so
+
+### MLIR Vulkan runner
+mlir-vulkan-runner -e main -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libvulkan-runtime-wrappers.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so
+
+### MLIR SPIRV runner
+mlir-spirv-cpu-runner -e main -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_test_spirv_cpu_runner_c_wrappers.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so
+
+### Lowering pipelines
+# Incomplete annotations
+mlir-opt ../test.mlir -convert-linalg-to-parallel-loops \ 
+-gpu-map-parallel-loops -convert-parallel-loops-to-gpu -gpu-kernel-outlining \
+-convert-gpu-to-nvvm -gpu-to-llvm="gpu-binary-annotation=nvvm.cubin use-opaque-pointers=1"
+
+# Working pass - see file:
+# llvm-project/mlir/test/Integration/Dialect/Vector/GPU/CUDA/test-reduction-distribute.mlir
+mlir-opt ../test.mlir -convert-linalg-to-parallel-loops \
+-gpu-map-parallel-loops -convert-parallel-loops-to-gpu \
+-lower-affine -convert-scf-to-cf -convert-vector-to-llvm -convert-arith-to-llvm \
+-gpu-kernel-outlining | \
+mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-nvvm,reconcile-unrealized-casts,gpu-to-cubin))'
+
+# SPIRV pass:
+mlir-opt ../test.mlir -convert-linalg-to-parallel-loops \
+-gpu-map-parallel-loops -convert-parallel-loops-to-gpu \
+-lower-affine -convert-scf-to-cf -convert-vector-to-llvm -convert-arith-to-llvm \
+-gpu-kernel-outlining | \
+mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-spirv,reconcile-unrealized-casts,gpu-to-cubin))'
+
+### Example runners
+# Run test.mlir
+mlir-opt ../test.mlir -convert-linalg-to-parallel-loops -gpu-map-parallel-loops -convert-parallel-loops-to-gpu |mlir-opt  -lower-affine -arith-expand -lower-affine -convert-scf-to-cf -convert-vector-to-llvm -gpu-kernel-outlining |mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-nvvm,reconcile-unrealized-casts,gpu-to-cubin))' | mlir-opt -gpu-to-llvm -reconcile-unrealized-casts  | mlir-cpu-runner -e entry -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_cuda_runtime.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_async_runtime.so
+
+# Run test.mlir with async
+mlir-opt ../test.mlir -convert-linalg-to-parallel-loops -gpu-map-parallel-loops -convert-parallel-loops-to-gpu |mlir-opt  -lower-affine -convert-scf-to-cf -convert-vector-to-llvm  -convert-arith-to-llvm -gpu-kernel-outlining |mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-nvvm,reconcile-unrealized-casts,gpu-to-cubin))' | mlir-opt -gpu-async-region -gpu-to-llvm -async-to-async-runtime -async-runtime-ref-counting -convert-async-to-llvm -convert-func-to-llvm -reconcile-unrealized-casts | mlir-cpu-runner -e entry -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_cuda_runtime.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_async_runtime.so
+
+# Run CUDA/test-reduction-distribute.mlir
+mlir-opt ~/llvm-project/mlir/test/Integration/Dialect/Vector/GPU/CUDA/test-reduction-distribute.mlir -test-vector-warp-distribute="hoist-uniform distribute-transfer-write propagate-distribution" -canonicalize |mlir-opt -test-vector-warp-distribute=rewrite-warp-ops-to-scf-if |mlir-opt  -lower-affine -convert-scf-to-cf -convert-vector-to-llvm  -convert-arith-to-llvm -gpu-kernel-outlining |mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-nvvm,reconcile-unrealized-casts,gpu-to-cubin))' | mlir-opt -gpu-to-llvm -reconcile-unrealized-casts | mlir-cpu-runner -e main -entry-point-result=void -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_cuda_runtime.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so
+
+# Run CUDA/all-reduce-max.mlir
+mlir-opt ~/llvm-project/mlir/test/Integration/GPU/CUDA/all-reduce-max.mlir | mlir-opt -gpu-kernel-outlining | mlir-opt -pass-pipeline='builtin.module(gpu.module(strip-debuginfo,convert-gpu-to-nvvm,gpu-to-cubin))' | mlir-opt -gpu-to-llvm | mlir-cpu-runner   -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_cuda_runtime.so   -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_c_runner_utils.so   -shared-libs=$CUSTOM_LLVM_ROOT/lib/libmlir_runner_utils.so   --entry-point-result=void
+
+### Troubleshooting:
+- CUDA not working on WSL e.g., device not detected
+   -- check if CUDA driver and cuda-toolkit versions are the same:
+      $ nvidia-smi
+      $ dpkg -l | grep cuda-toolkit
+   -- install latest NVIDIA Driver on host/windows machine (not WSL)
+       https://www.nvidia.com/Download/index.aspx
+   -- install CUDA Toolkit on WSL - for Ubuntu:
+      https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local
+
+### SPIRV/Vulkan tests
+# Installing vulkan on WSL2
+sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-utils
+#sudo add-apt-repository ppa:oibaf/graphics-drivers
+#sudo apt-get update && sudo apt-get upgrade
+#sudo apt install vulkan-sdk
+sudo apt install mesa-va-drivers
+
+### Links:
+- runtime CUDA error:
+   https://discourse.llvm.org/t/failed-gpu-integrated-execution-with-cuda-error/63072
+   https://forums.developer.nvidia.com/t/cuda-driver-version-is-insufficient-for-cuda-runtime-version-wsl2-ubuntu-18-04/178720/10
+- CUDA on WSL:
+   https://learn.microsoft.com/en-us/windows/ai/directml/gpu-cuda-in-wsl
+   https://docs.nvidia.com/cuda/wsl-user-guide/index.html#known-limitations-for-linux-cuda-apps
+- NVIDIA docker:
+   https://github.com/NVIDIA/nvidia-docker
+- CUDA samples:
+   https://github.com/nvidia/cuda-samples
+- CUDA alloc bug:
+   https://discourse.llvm.org/t/making-linalg-matmul-to-gpu-runnable-code/3910/6
+   https://discourse.llvm.org/t/mlir-gpu-cuda-error-invalid-handle-in-mlir-gpu-execution/62314/3
+   https://bugs.llvm.org/show_bug.cgi?id=51107
+   https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__MEM.html#group__CUDA__MEM_1g57a39e5cba26af4d06be67fc77cc62f0
+
+- Vulkan on ubuntu docker:
+   https://forums.developer.nvidia.com/t/how-to-get-vulkan-working-on-a-ubuntu20-04-docker-container/240371/3
+   https://devblogs.microsoft.com/commandline/d3d12-gpu-video-acceleration-in-the-windows-subsystem-for-linux-now-available/
+   https://devblogs.microsoft.com/commandline/wslg-architecture/

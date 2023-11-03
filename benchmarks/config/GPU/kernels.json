@@ -1,0 +1,33 @@
+[
+  {
+  "cuda_gemm": {
+    "cublas": {
+      "type": "GENERIC",
+      "benchmark": [ "bench_cuda_matmul", "--input=256x1024x1024 --iter=100 --kernel=cublas" ],
+      "environment": {},
+      "flags": [ "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "linalg-gemm": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/linalg-gemm.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-base": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/gemm-base.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-coalesced": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/gemm-coalesced.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    }
+  }}
+]

@@ -91,7 +91,7 @@ module attributes {gpu.container_module} {
 
       // Load whole A and B tiles from GMEM to SMEM.
       // The tiles are loaded cooperatively using all threads in a threadblock.
-      scf.for %arg6 = %c0 to %numTilesK step %c1 {
+      scf.for %arg6 = %c0 to %numSubTilesK step %c1 {
         // Find the start position of a sub-tile.
         %subTileStepRow = arith.muli %arg6, %bDimX : index
         %subTileStepCol = arith.muli %arg6, %bDimY : index
@@ -133,8 +133,8 @@ module attributes {gpu.container_module} {
       // The above SMEM access patterns affect only threads in the same warp.
       // There is no concept of bank conflicts between threads in different warps.
       %7 = scf.for %arg6 = %arg3 to %arg4 step %arg5 iter_args(%arg7 = %6) -> (f32) {
-        // A tile same element -> broadcast [fast] load from SMEM.
-        // B tile consecutive elements -> no bank conflicts [fast] load from SMEM.
+        // A tile same element (tID y, iv) -> broadcast [fast] load from SMEM.
+        // B tile consecutive elements (iv, tID x) -> no bank conflicts [fast] load from SMEM.
         %8 = memref.load %smemA[%2, %arg6] : memref<32x64xf32, 3>
         %9 = memref.load %smemB[%arg6, %3] : memref<64x32xf32, 3>
         %10 = arith.mulf %8, %9 : f32

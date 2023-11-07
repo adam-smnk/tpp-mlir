@@ -22,7 +22,7 @@ module attributes {gpu.container_module} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
       %c32 = arith.constant 32 : index
-      
+
       %0 = gpu.block_id  x
       %1 = gpu.block_id  y
       %2 = gpu.thread_id  y

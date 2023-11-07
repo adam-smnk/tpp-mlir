@@ -98,8 +98,8 @@ module attributes {gpu.container_module} {
         %offsetA = arith.addi %3, %subTileStepRow : index
         %offsetB = arith.addi %2, %subTileStepCol : index
 
-        // A tile consecutive elements (tID y, offset + tID x) -> coalesced GMEM read [fast].
-        // B tile consecutive elements (offset + tID y, tID x) -> coalesced GMEM read [fast].
+        // A tile consecutive elements (tID y, offset + tID x) -> coalesced GMEM load [fast].
+        // B tile consecutive elements (offset + tID y, tID x) -> coalesced GMEM load [fast].
         %elemA = memref.load %subview[%2, %offsetA] : memref<32x64xf32, strided<[64, 1], offset: ?>>
         %elemB = memref.load %subview_0[%offsetB, %3] : memref<64x32xf32, strided<[64, 1], offset: ?>>
 
@@ -112,7 +112,7 @@ module attributes {gpu.container_module} {
       // Wait for all threads in a threadblock to finish loading A and B tile elements.
       gpu.barrier
 
-      // C tile consecutive elements (tID y, tID x) -> coalesced GMEM read [fast].
+      // C tile consecutive elements (tID y, tID x) -> coalesced GMEM load [fast].
       %6 = memref.load %subview_1[%2, %3] : memref<32x32xf32, strided<[64, 1], offset: ?>>
 
       // SMEM is split into rows of 32x 4 byte banks -> 128 byte rows -> 32x 4 byte elements.
@@ -141,7 +141,8 @@ module attributes {gpu.container_module} {
         %11 = arith.addf %arg7, %10 : f32
         scf.yield %11 : f32
       }
-      // C tile consecutive elements (tID y, tID x) -> coalesced GMEM store [fast].
+
+      // C tile consecutive elements (tID y, tID x) -> coalesced [fast] store to GMEM.
       memref.store %7, %subview_1[%2, %3] : memref<32x32xf32, strided<[64, 1], offset: ?>>
       gpu.return
     }

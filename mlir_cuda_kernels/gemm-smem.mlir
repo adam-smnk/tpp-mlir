@@ -39,7 +39,7 @@ module attributes {gpu.container_module} {
     // (carveout) config.
     //
     // SMEM buffers are represented as a GPU kernel global memrefs with shared memory
-    // attribute (kSharedMemorySpace -> 3 - see NVVMMemorySpace).
+    // attribute (gpu::AddressSpace::Workgroup - see GPUOpsEnums.h.inc).
     // The tile sizes are known at compile time, thus, the SMEM tile buffers can be stored
     // in static shared memory buffers (fixed sizes opposed to dynamic shared memory).
     //
@@ -49,8 +49,8 @@ module attributes {gpu.container_module} {
     //       Therefore, reduction dim tiling will have to be applied first in order to run
     //       any larger GEMM computations.
     //       See: 'kernel 6'.
-    memref.global "private" @smemTileA : memref<32x64xf32, 3>
-    memref.global "private" @smemTileB : memref<64x32xf32, 3>
+    memref.global "private" @smemTileA : memref<32x64xf32, #gpu.address_space<workgroup>>
+    memref.global "private" @smemTileB : memref<64x32xf32, #gpu.address_space<workgroup>>
 
     gpu.func @entry_kernel(%arg0: memref<64x64xf32>, %arg1: memref<64x64xf32>, %arg2: memref<64x64xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 32, 32, 1>, gpu.known_grid_size = array<i32: 2, 2, 1>} {
       %c0 = arith.constant 0 : index
@@ -67,12 +67,12 @@ module attributes {gpu.container_module} {
       %subview_0 = memref.subview %arg1[0, %5] [64, 32] [1, 1] : memref<64x64xf32> to memref<64x32xf32, strided<[64, 1], offset: ?>>
       %subview_1 = memref.subview %arg2[%4, %5] [32, 32] [1, 1] : memref<64x64xf32> to memref<32x32xf32, strided<[64, 1], offset: ?>>
 
-      // Memref alloc with shared memory space attr i.e., `memref.alloc() : memref<64x32xf32, 3>`,
+      // Memref alloc with shared memory space attr i.e., `memref.alloc() : memref<64x32xf32, #gpu.address_space<workgroup>>`,
       // has no default convertion path to a SMEM GPU buffer representation.
       // Therefore, the shared buffers are explicitly represented as kernel globals with SMEM attr.
       // NOTE: it seems possible to use memref.alloc together with NVGPU ops.
-      %smemA = memref.get_global @smemTileA : memref<32x64xf32, 3>
-      %smemB = memref.get_global @smemTileB : memref<64x32xf32, 3>
+      %smemA = memref.get_global @smemTileA : memref<32x64xf32, #gpu.address_space<workgroup>>
+      %smemB = memref.get_global @smemTileB : memref<64x32xf32, #gpu.address_space<workgroup>>
 
       // Find size of the GEMM tiles reduction dimension.
       %dimK = memref.dim %subview, %c1 : memref<32x64xf32, strided<[64, 1], offset: ?>>
@@ -103,8 +103,8 @@ module attributes {gpu.container_module} {
         %elemA = memref.load %subview[%2, %offsetA] : memref<32x64xf32, strided<[64, 1], offset: ?>>
         %elemB = memref.load %subview_0[%offsetB, %3] : memref<64x32xf32, strided<[64, 1], offset: ?>>
 
-        memref.store %elemA, %smemA[%2, %offsetA] : memref<32x64xf32, 3>
-        memref.store %elemB, %smemB[%offsetB, %3] : memref<64x32xf32, 3>
+        memref.store %elemA, %smemA[%2, %offsetA] : memref<32x64xf32, #gpu.address_space<workgroup>>
+        memref.store %elemB, %smemB[%offsetB, %3] : memref<64x32xf32, #gpu.address_space<workgroup>>
       }
 
       // Synchronize all threads in a threadblock.
@@ -135,8 +135,8 @@ module attributes {gpu.container_module} {
       %7 = scf.for %arg6 = %arg3 to %arg4 step %arg5 iter_args(%arg7 = %6) -> (f32) {
         // A tile same element (tID y, iv) -> broadcast [fast] load from SMEM.
         // B tile consecutive elements (iv, tID x) -> no bank conflicts [fast] load from SMEM.
-        %8 = memref.load %smemA[%2, %arg6] : memref<32x64xf32, 3>
-        %9 = memref.load %smemB[%arg6, %3] : memref<64x32xf32, 3>
+        %8 = memref.load %smemA[%2, %arg6] : memref<32x64xf32, #gpu.address_space<workgroup>>
+        %9 = memref.load %smemB[%arg6, %3] : memref<64x32xf32, #gpu.address_space<workgroup>>
         %10 = arith.mulf %8, %9 : f32
         %11 = arith.addf %arg7, %10 : f32
         scf.yield %11 : f32

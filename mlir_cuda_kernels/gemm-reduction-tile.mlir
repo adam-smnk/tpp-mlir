@@ -32,8 +32,8 @@ module attributes {gpu.container_module} {
     // Allocate to SMEM buffers to manually cache A and B tiles.
     // C tile element values can be accumulated in thread registers as the C tile <32x32> elements
     // fit in the threadblock <32x32> threads.
-    memref.global "private" @smemTileA : memref<32x32xf32, 3> // LHS input tile
-    memref.global "private" @smemTileB : memref<32x32xf32, 3> // RHS input tile
+    memref.global "private" @smemTileA : memref<32x32xf32, #gpu.address_space<workgroup>> // LHS input tile
+    memref.global "private" @smemTileB : memref<32x32xf32, #gpu.address_space<workgroup>> // RHS input tile
 
     gpu.func @entry_kernel(%arg0: memref<64x64xf32>, %arg1: memref<64x64xf32>, %arg2: memref<64x64xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 32, 32, 1>, gpu.known_grid_size = array<i32: 2, 2, 1>} {
       %c0 = arith.constant 0 : index
@@ -51,8 +51,8 @@ module attributes {gpu.container_module} {
       %subview_0 = memref.subview %arg1[0, %5] [64, 32] [1, 1] : memref<64x64xf32> to memref<64x32xf32, strided<[64, 1], offset: ?>>
       %subview_1 = memref.subview %arg2[%4, %5] [32, 32] [1, 1] : memref<64x64xf32> to memref<32x32xf32, strided<[64, 1], offset: ?>>
 
-      %smemA = memref.get_global @smemTileA : memref<32x32xf32, 3>
-      %smemB = memref.get_global @smemTileB : memref<32x32xf32, 3>
+      %smemA = memref.get_global @smemTileA : memref<32x32xf32, #gpu.address_space<workgroup>>
+      %smemB = memref.get_global @smemTileB : memref<32x32xf32, #gpu.address_space<workgroup>>
 
       // Find size of the GEMM tiles reduction dimension.
       // Rectangular sub-tile shape is assumed for simplicity.
@@ -79,8 +79,8 @@ module attributes {gpu.container_module} {
         %elemA = memref.load %subview[%2, %offsetA] : memref<32x64xf32, strided<[64, 1], offset: ?>>
         %elemB = memref.load %subview_0[%offsetB, %3] : memref<64x32xf32, strided<[64, 1], offset: ?>>
 
-        memref.store %elemA, %smemA[%2, %3] : memref<32x32xf32, 3>
-        memref.store %elemB, %smemB[%2, %3] : memref<32x32xf32, 3>
+        memref.store %elemA, %smemA[%2, %3] : memref<32x32xf32, #gpu.address_space<workgroup>>
+        memref.store %elemB, %smemB[%2, %3] : memref<32x32xf32, #gpu.address_space<workgroup>>
 
         // Synchronize all threads in a threadblock.
         // Whole A and B sub-tiles are needed to perform computation.
@@ -96,8 +96,8 @@ module attributes {gpu.container_module} {
         %7 = scf.for %arg6 = %c0 to %c32 step %c1 iter_args(%arg7 = %acc) -> (f32) {
           // A tile same element (tID y, iv) -> broadcast [fast] load from SMEM.
           // B tile consecutive elements (iv, tID x) -> no bank conflicts [fast] load from SMEM.
-          %8 = memref.load %smemA[%2, %arg6] : memref<32x32xf32, 3>
-          %9 = memref.load %smemB[%arg6, %3] : memref<32x32xf32, 3>
+          %8 = memref.load %smemA[%2, %arg6] : memref<32x32xf32, #gpu.address_space<workgroup>>
+          %9 = memref.load %smemB[%arg6, %3] : memref<32x32xf32, #gpu.address_space<workgroup>>
           %10 = arith.mulf %8, %9 : f32
           %11 = arith.addf %arg7, %10 : f32
           scf.yield %11 : f32

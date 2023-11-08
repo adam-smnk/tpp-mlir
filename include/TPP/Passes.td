@@ -409,7 +409,7 @@ def GpuToCuda : Pass<"gpu-to-cuda", "ModuleOp"> {
             /*default=*/"\"nvptx64-nvidia-cuda\"",
            "GPU target triple.">,
     Option<"gpuChip", "chip", "std::string",
-            /*default=*/"\"sm_35\"",
+            /*default=*/"\"sm_80\"",
            "GPU target architecture.">,
     Option<"gpuFeatures", "features", "std::string",
             /*default=*/"\"+ptx60\"",

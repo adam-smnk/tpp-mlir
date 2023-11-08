@@ -116,7 +116,7 @@ if (TPP_GPU)
   WORKING_DIRECTORY ${BENCHMARK_DIR}
   COMMENT Run Quick GPU Benchmarks)
 
-  add_custom_target(kernels ${BENCHMARK_DIR}/driver.py -v --build ${PROJECT_BINARY_DIR} -n 10
+  add_custom_target(kernels ${BENCHMARK_DIR}/driver.py -v --build ${PROJECT_BINARY_DIR} -n 100
   -c ${CONFIG_DIR}/GPU/kernels.json
   DEPENDS tpp-opt tpp-run ${BENCH_CUDA_DEPS}
   WORKING_DIRECTORY ${BENCHMARK_DIR}

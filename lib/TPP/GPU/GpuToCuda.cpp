@@ -86,9 +86,9 @@ private:
     pm.addNestedPass<gpu::GPUModuleOp>(createConvertNVGPUToNVVMPass());
     pm.addNestedPass<gpu::GPUModuleOp>(createReconcileUnrealizedCastsPass());
     GpuNVVMAttachTargetOptions nvvmTargetOptions;
-    nvvmTargetOptions.triple = gpuTriple;
-    nvvmTargetOptions.chip = gpuChip;
-    nvvmTargetOptions.features = gpuFeatures;
+    nvvmTargetOptions.triple = this->gpuTriple;
+    nvvmTargetOptions.chip = this->gpuChip;
+    nvvmTargetOptions.features = this->gpuFeatures;
     pm.addPass(createGpuNVVMAttachTarget(nvvmTargetOptions));
 
     // Cleanup IR.

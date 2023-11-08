@@ -137,16 +137,11 @@ private:
     // Lower GPU ops to the chosen GPU backend.
     switch (gpuType) {
     case GpuType::Cuda: {
-      std::string gpuTriple = "nvptx64-nvidia-cuda";
-      std::string gpuChip = "sm_70";
-      std::string gpuFeatures = "+ptx60";
-
       // Perform explicit GPU data transfers only for CUDA as the unified
       // memory is not currently used here.
       // Vulkan runner assumes usage of GPU unified memory.
       pm.addNestedPass<func::FuncOp>(createGpuDataTransfer());
-      pm.addPass(
-          createGpuToCuda(GpuToCudaOptions{gpuTriple, gpuChip, gpuFeatures}));
+      pm.addPass(createGpuToCuda());
       break;
     }
     case GpuType::Vulkan: {

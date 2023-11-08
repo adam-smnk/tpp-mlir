@@ -35,6 +35,13 @@
       "environment": {},
       "flags": [ "-n", "100", "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-prefetching": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/gemm-prefetching.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
     }
   }}
 ]

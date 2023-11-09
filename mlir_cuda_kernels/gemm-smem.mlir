@@ -48,7 +48,7 @@ module attributes {gpu.container_module} {
     //       kernel from running ('uses too much shared data' error).
     //       Therefore, reduction dim tiling will have to be applied first in order to run
     //       any larger GEMM computations.
-    //       See: 'kernel 6'.
+    //       See: 'Kernel 6'.
     memref.global "private" @smemTileA : memref<32x64xf32, #gpu.address_space<workgroup>>
     memref.global "private" @smemTileB : memref<64x32xf32, #gpu.address_space<workgroup>>
 

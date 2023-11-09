@@ -104,6 +104,10 @@ module attributes {gpu.container_module} {
         // element-wise representation (base memref offsets, number of elements).
         // Use directly specialized nvgpu dialect operations.
         //
+        // '#gpu.address_space<workgroup>' does not work with nvgpu operations.
+        // Instead, use 'NVVM::NVVMMemorySpace::kSharedMemorySpace' attr value 3 directly.
+        // TODO: add type conversion to nvgpu-to-nvvm pass.
+        //
         // Start asynchronous copy from GMEM to SMEM.
         // This delegates data movement to separate hardware and threads can perform
         // computations in parallel.

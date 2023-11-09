@@ -3,7 +3,7 @@
 
 // BENCH_TOTAL_FLOPS: 2147483648
 
-// Extra test kernel.
+// Extra kernel 1.
 // Sizes from benchmarks.
 // Variation on Kernel 8.
 

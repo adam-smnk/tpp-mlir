@@ -1,5 +1,7 @@
 // RUN: tpp-run %s -gpu=cuda -entry-point-result=void -e entry
 
+// Test kernel 1.
+
 module attributes {gpu.container_module} {
   gpu.module @kernels {
     memref.global @data : memref<4x4xf32> = dense<[

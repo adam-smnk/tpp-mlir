@@ -9,6 +9,8 @@
 #include "TPP/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
+#include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVMPass.h"
+#include "mlir/Conversion/VectorToSCF/VectorToSCF.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Transforms/Passes.h"
@@ -76,6 +78,8 @@ private:
     // Preprocess and lower standard ops.
     pm.addNestedPass<gpu::GPUModuleOp>(
         memref::createExpandStridedMetadataPass());
+    pm.addNestedPass<gpu::GPUModuleOp>(createConvertVectorToSCFPass());
+    pm.addNestedPass<gpu::GPUModuleOp>(createConvertVectorToLLVMPass());
     pm.addNestedPass<gpu::GPUModuleOp>(arith::createArithExpandOpsPass());
     pm.addNestedPass<gpu::GPUModuleOp>(createLowerAffinePass());
     pm.addNestedPass<gpu::GPUModuleOp>(createConvertSCFToCFPass());

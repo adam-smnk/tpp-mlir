@@ -3,7 +3,7 @@
   "cuda_gemm": {
     "cublas": {
       "type": "GENERIC",
-      "benchmark": [ "bench_cuda_matmul", "--input=256x1024x1024 --iter=100 --kernel=cublas" ],
+      "benchmark": [ "bench_cuda_matmul", "--input=1024x1024x1024 --iter=100 --kernel=cublas" ],
       "environment": {},
       "flags": [ "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]

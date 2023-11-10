@@ -121,10 +121,11 @@ module attributes {gpu.container_module} {
         scf.for %rowOffset = %c0 to %BK step %c2 {
           %tileStart = arith.addi %tRowB, %subtileOffset : index
           %rowB = arith.addi %tileStart, %rowOffset : index
+          %smemRowB = arith.addi %tRowB, %rowOffset : index
 
           // B tile 32 consecutive elements -> coalesced GMEM load [fast].
           %elemB = memref.load %subview_0[%rowB, %tColB] : memref<64x32xf32, strided<[64, 1], offset: ?>>
-          memref.store %elemB, %smemB[%tRowB, %tColB] : memref<4x32xf32, #gpu.address_space<workgroup>>
+          memref.store %elemB, %smemB[%smemRowB, %tColB] : memref<4x32xf32, #gpu.address_space<workgroup>>
         }
 
         // Synchronize all threads in a threadblock.
@@ -137,13 +138,13 @@ module attributes {gpu.container_module} {
         %outColOffset = arith.muli %3, %TN : index
         scf.for %offset = %c0 to %BK step %c1 {
           scf.for %tm = %c0 to %TM step %c1 {
-            %smemColA = arith.addi %outColOffset, %offset : index
-            %elemA = memref.load %smemA[%tm, %smemColA] : memref<32x4xf32, #gpu.address_space<workgroup>>
+            %smemRowA = arith.addi %outRowOffset, %tm : index
+            %elemA = memref.load %smemA[%smemRowA, %offset] : memref<32x4xf32, #gpu.address_space<workgroup>>
             memref.store %elemA, %regA[%tm] : memref<4xf32, #gpu.address_space<private>>
           }
           scf.for %tn = %c0 to %TN step %c1 {
-            %smemRowB = arith.addi %outRowOffset, %offset : index
-            %elemB = memref.load %smemA[%smemRowB, %tn] : memref<32x4xf32, #gpu.address_space<workgroup>>
+            %smemColB = arith.addi %outColOffset, %tn : index
+            %elemB = memref.load %smemB[%offset, %smemColB] : memref<4x32xf32, #gpu.address_space<workgroup>>
             memref.store %elemB, %regB[%tn] : memref<4xf32, #gpu.address_space<private>>
           }
 

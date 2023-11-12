@@ -49,6 +49,13 @@
       "environment": {},
       "flags": [ "-n", "100", "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-coarse-threads": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/gemm-coarse-threads.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
     }
   }}
 ]

@@ -1,6 +1,6 @@
 [
   {
-  "cuda_gemm": {
+  "cuda_gemm_1024": {
     "cublas": {
       "type": "GENERIC",
       "benchmark": [ "bench_cuda_matmul", "--input=1024x1024x1024 --iter=100 --kernel=cublas" ],
@@ -67,6 +67,51 @@
     "gemm-vectorize-AT": {
       "type": "MLIR",
       "benchmark": "GPU/cuda_kernels/gemm-vectorize-AT.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    }
+  }},
+  {
+  "cuda_gemm_4096": {
+    "cublas": {
+      "type": "GENERIC",
+      "benchmark": [ "bench_cuda_matmul", "--input=4096x4096x4096 --iter=100 --kernel=cublas" ],
+      "environment": {},
+      "flags": [ "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-smem-red-tile": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-smem-reduction-tile.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-prefetching": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-prefetching.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-coarse-threads": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-coarse-threads.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-swizzle": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-swizzle.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-vectorize-AT": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-vectorize-AT.mlir",
       "environment": {},
       "flags": [ "-n", "100", "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]

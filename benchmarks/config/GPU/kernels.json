@@ -63,6 +63,13 @@
       "environment": {},
       "flags": [ "-n", "100", "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-vectorize-AT": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/gemm-vectorize-AT.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
     }
   }}
 ]

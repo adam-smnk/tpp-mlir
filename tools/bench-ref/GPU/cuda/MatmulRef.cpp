@@ -168,7 +168,13 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  double gflops = static_cast<double>(2 * n * m * k) / 1e9;
+  // Accumulate in uint64 to avoid overflow.
+  uint64_t flops = 1;
+  flops *= 2;
+  flops *= n;
+  flops *= m;
+  flops *= k;
+  double gflops = static_cast<double>(flops) / 1e9;
   auto bench =
       Benchmark<MatmulKernelGpu, CudaTensor<float>>(config.iter, gflops);
   std::vector<CudaTensor<float>> args;

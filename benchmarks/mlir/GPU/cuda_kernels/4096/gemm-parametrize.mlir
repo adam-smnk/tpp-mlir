@@ -38,7 +38,7 @@ module attributes {gpu.container_module} {
       %c64 = arith.constant 64 : index
 
       %0 = gpu.block_id  x
-      %1 = gpu.block_id  y4
+      %1 = gpu.block_id  y
       // %4 = affine.apply #map(%0)
       // %5 = affine.apply #map(%1)
       %2 = gpu.thread_id  y // Fixed for each warp thread.

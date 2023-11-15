@@ -134,9 +134,13 @@ module attributes {gpu.container_module} {
         // numStepsA = (SMEM cache size = BM * BK) / (threadblocksize = 'block dim x' * 'block dim y')
         %smemSizeA = arith.muli %BM, %BK : index
         %numStepsA = arith.divui %smemSizeA, %blockSize : index
+        %numElemPerT = arith.constant 1 : index
+        %stepSize = arith.muli %blockSize, %numElemPerT : index
         scf.for %subtileStep = %c0 to %numStepsA step %c1 {
-          %rowOffset = arith.muli %subtileStep, %BM : index
-          %rowA = arith.addi %tRowA, %rowOffset : index
+          %numLoaded = arith.muli %subtileStep, %stepSize : index
+          %stepRowOffset = arith.divui %numLoaded, %BK : index
+          // %rowOffset = arith.muli %subtileStep, %stepRowOffset : index
+          %rowA = arith.addi %tRowA, %stepRowOffset : index
           %colA = arith.addi %subtileOffset, %tColA : index
 
           // A tile 4 consecutive elements -> coalesced GMEM load [medium].
@@ -148,10 +152,12 @@ module attributes {gpu.container_module} {
         %smemSizeB = arith.muli %BK, %BN : index
         %numStepsB = arith.divui %smemSizeB, %blockSize : index
         scf.for %subtileStep = %c0 to %numStepsB step %c1 {
-          %rowOffset = arith.muli %subtileStep, %BK : index
+          // %rowOffset = arith.muli %subtileStep, %BK : index
+          %numLoaded = arith.muli %subtileStep, %stepSize : index
+          %stepRowOffset = arith.divui %numLoaded, %BN : index
           %tileStart = arith.addi %tRowB, %subtileOffset : index
-          %rowB = arith.addi %tileStart, %rowOffset : index
-          %smemRowB = arith.addi %tRowB, %rowOffset : index
+          %rowB = arith.addi %tileStart, %stepRowOffset : index
+          %smemRowB = arith.addi %tRowB, %stepRowOffset : index
 
           // B tile 32 consecutive elements -> coalesced GMEM load [fast].
           %elemB = memref.load %subview_0[%rowB, %tColB] : memref<128x64xf32, strided<[128, 1], offset: ?>>

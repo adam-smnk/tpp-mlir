@@ -129,6 +129,13 @@
       "environment": {},
       "flags": [ "-n", "100", "--gpu=cuda" ],
       "extensions": [ "(avx2|asimd)" ]
+    },
+    "gemm-tuned-a100": {
+      "type": "MLIR",
+      "benchmark": "GPU/cuda_kernels/4096/gemm-tuned-a100.mlir",
+      "environment": {},
+      "flags": [ "-n", "100", "--gpu=cuda" ],
+      "extensions": [ "(avx2|asimd)" ]
     }
   }}
 ]

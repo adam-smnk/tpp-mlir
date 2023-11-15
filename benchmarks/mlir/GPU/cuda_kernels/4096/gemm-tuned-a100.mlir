@@ -47,8 +47,8 @@ module attributes {gpu.container_module} {
       // gpu.printf "thread: %lld %lld\n" %2, %3 : index, index
 
       // Pick C matrix tile in swizzle pattern.
-      %gDimX = arith.constant 128 : index
-      %gDimY = arith.constant 128 : index
+      %gDimX = arith.constant 32 : index
+      %gDimY = arith.constant 32 : index
       %bRowOffset = arith.muli %1, %gDimX : index
       %bId = arith.addi %bRowOffset, %0 : index
 
@@ -72,7 +72,7 @@ module attributes {gpu.container_module} {
       %5 = affine.apply #map(%tileColC)
 
       // PARAM: sizes have to match new GEMM tile size
-      %subview = memref.subview %arg0[%4, 0] [128, 4096] [1, 1] : memref<4096x4096xf32> to memref<128x8096xf32, strided<[4096, 1], offset: ?>>
+      %subview = memref.subview %arg0[%4, 0] [128, 4096] [1, 1] : memref<4096x4096xf32> to memref<128x4096xf32, strided<[4096, 1], offset: ?>>
       %subview_0 = memref.subview %arg1[0, %5] [4096, 128] [1, 1] : memref<4096x4096xf32> to memref<4096x128xf32, strided<[4096, 1], offset: ?>>
       %subview_1 = memref.subview %arg2[%4, %5] [128, 128] [1, 1] : memref<4096x4096xf32> to memref<128x128xf32, strided<[4096, 1], offset: ?>>
 
@@ -89,13 +89,13 @@ module attributes {gpu.container_module} {
       // Reduction dimension tiling is chosen to match thread tile sizes.
       //
       // PARAM: block sizes BM and BN have to match GEMM tile size
-      %BM = memref.dim %subview, %c0 : memref<128x8096xf32, strided<[4096, 1], offset: ?>>
+      %BM = memref.dim %subview, %c0 : memref<128x4096xf32, strided<[4096, 1], offset: ?>>
       %BN = memref.dim %subview_0, %c1 : memref<4096x128xf32, strided<[4096, 1], offset: ?>>
       %BK = arith.constant 8 : index
 
       // Find size of the GEMM tiles reduction dimension.
       // Rectangular sub-tile shape is assumed for simplicity.
-      %dimK = memref.dim %subview, %c1 : memref<128x8096xf32, strided<[4096, 1], offset: ?>>
+      %dimK = memref.dim %subview, %c1 : memref<128x4096xf32, strided<[4096, 1], offset: ?>>
       %numSubTilesK = arith.ceildivsi %dimK, %BK : index
 
       // %bDimX = gpu.block_dim x // Threadblock size in X (first) dim.
@@ -161,7 +161,7 @@ module attributes {gpu.container_module} {
           %colA = arith.addi %subtileOffset, %tColA : index
 
           // A tile 4 consecutive elements -> coalesced GMEM load [medium].
-          %elemA = memref.load %subview[%rowA, %colA] : memref<128x8096xf32, strided<[4096, 1], offset: ?>>
+          %elemA = memref.load %subview[%rowA, %colA] : memref<128x4096xf32, strided<[4096, 1], offset: ?>>
           memref.store %elemA, %smemA[%rowA, %tColA] : memref<128x8xf32, #gpu.address_space<workgroup>>
         }
         // PARAM: Step size here:

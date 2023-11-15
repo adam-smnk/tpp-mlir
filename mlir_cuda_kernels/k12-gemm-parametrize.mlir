@@ -53,8 +53,6 @@ module attributes {gpu.container_module} {
       %5 = affine.apply #map(%1)
       %2 = gpu.thread_id  y // Fixed for each warp thread.
       %3 = gpu.thread_id  x // Consecutive increase within warp threads.
-      // gpu.printf "block: %lld %lld\n" %1, %0 : index, index
-      // gpu.printf "thread: %lld %lld\n" %2, %3 : index, index
 
       // UPDATE: sizes have to match new GEMM tile size
       %subview = memref.subview %arg0[%4, 0] [64, 128] [1, 1] : memref<128x128xf32> to memref<64x128xf32, strided<[128, 1], offset: ?>>
@@ -83,8 +81,11 @@ module attributes {gpu.container_module} {
       %dimK = memref.dim %subview, %c1 : memref<64x128xf32, strided<[128, 1], offset: ?>>
       %numSubTilesK = arith.ceildivsi %dimK, %BK : index
 
-      %bDimX = gpu.block_dim x // Threadblock size in X (first) dim.
-      %bDimY = gpu.block_dim y // Threadblock size in Y (second) dim.
+      // Needs constant value for better optimizations.
+      // %bDimX = gpu.block_dim x // Threadblock size in X (first) dim.
+      // %bDimY = gpu.block_dim y // Threadblock size in Y (second) dim.
+      %bDimX = arith.constant 16 : index
+      %bDimY = arith.constant 16 : index
       %blockSize = arith.muli %bDimX, %bDimY : index
 
       // Thread caches.
@@ -139,7 +140,6 @@ module attributes {gpu.container_module} {
         scf.for %subtileStep = %c0 to %numStepsA step %c1 {
           %numLoaded = arith.muli %subtileStep, %stepSize : index
           %stepRowOffset = arith.divui %numLoaded, %BK : index
-          // %rowOffset = arith.muli %subtileStep, %stepRowOffset : index
           %rowA = arith.addi %tRowA, %stepRowOffset : index
           %colA = arith.addi %subtileOffset, %tColA : index
 
@@ -152,7 +152,6 @@ module attributes {gpu.container_module} {
         %smemSizeB = arith.muli %BK, %BN : index
         %numStepsB = arith.divui %smemSizeB, %blockSize : index
         scf.for %subtileStep = %c0 to %numStepsB step %c1 {
-          // %rowOffset = arith.muli %subtileStep, %BK : index
           %numLoaded = arith.muli %subtileStep, %stepSize : index
           %stepRowOffset = arith.divui %numLoaded, %BN : index
           %tileStart = arith.addi %tRowB, %subtileOffset : index
@@ -178,20 +177,10 @@ module attributes {gpu.container_module} {
             %elemA = memref.load %smemA[%smemRowA, %offset] : memref<64x4xf32, #gpu.address_space<workgroup>>
             memref.store %elemA, %regA[%tm] : memref<?xf32, #gpu.address_space<private>>
           }
-          // gpu.printf "threads: %lld %lld \n" %2, %3 : index, index
           scf.for %tn = %c0 to %TN step %c1 {
             %smemColB = arith.addi %outColOffset, %tn : index
-
-            %cst = arith.constant 0 : index
-            %t0 = arith.cmpi eq, %3, %cst : index
-            // scf.if %t0 {
-            //   gpu.printf "smemB: %lld %lld - regB: %lld\n" %offset, %smemColB, %tn : index, index, index
-            // }
             %elemB = memref.load %smemB[%offset, %smemColB] : memref<4x64xf32, #gpu.address_space<workgroup>>
             memref.store %elemB, %regB[%tn] : memref<?xf32, #gpu.address_space<private>>
-            // scf.if %t0 {
-            //   gpu.printf "elemB: %f\n" %elemB : f32
-            // }
           }
 
           // Outer product on A and B register caches.

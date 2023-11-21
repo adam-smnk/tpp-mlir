@@ -16,7 +16,7 @@
 
 // Increase GEMM tile size to <64x64> to allow each thread to compute <4x4>
 // elements.
-// UPDATE: map step has to match GEMM tile size
+// PARAM: map step has to match GEMM tile size
 #map = affine_map<(d0) -> (d0 * 64)>
 
 module attributes {gpu.container_module} {
@@ -35,7 +35,7 @@ module attributes {gpu.container_module} {
     return
   }
   gpu.module @entry_kernel {
-    // UPDATE: SMEM caches have to match <(GEMM tile size)x(reduction dim step)>
+    // PARAM: SMEM caches have to match <(GEMM tile size)x(reduction dim step)>
     memref.global "private" @smemTileA : memref<64x4xf32, #gpu.address_space<workgroup>>
     memref.global "private" @smemTileB : memref<4x64xf32, #gpu.address_space<workgroup>>
 
@@ -54,7 +54,7 @@ module attributes {gpu.container_module} {
       %2 = gpu.thread_id  y // Fixed for each warp thread.
       %3 = gpu.thread_id  x // Consecutive increase within warp threads.
 
-      // UPDATE: sizes have to match new GEMM tile size
+      // PARAM: sizes have to match new GEMM tile size
       %subview = memref.subview %arg0[%4, 0] [64, 128] [1, 1] : memref<128x128xf32> to memref<64x128xf32, strided<[128, 1], offset: ?>>
       %subview_0 = memref.subview %arg1[0, %5] [128, 64] [1, 1] : memref<128x128xf32> to memref<128x64xf32, strided<[128, 1], offset: ?>>
       %subview_1 = memref.subview %arg2[%4, %5] [64, 64] [1, 1] : memref<128x128xf32> to memref<64x64xf32, strided<[128, 1], offset: ?>>
@@ -62,16 +62,18 @@ module attributes {gpu.container_module} {
       %smemA = memref.get_global @smemTileA : memref<64x4xf32, #gpu.address_space<workgroup>>
       %smemB = memref.get_global @smemTileB : memref<4x64xf32, #gpu.address_space<workgroup>>
 
+      // TUNING PARAMETER
       // Thread tile sizes.
       // Each thread will compute <4x4> elements of C tile.
       %TM = arith.constant 4 : index
       %TN = arith.constant 4 : index
 
+      // TUNING PARAMETER
       // Block tile sizes.
       // Parallel dimensions are based on the original tiling size.
       // Reduction dimension tiling is chosen to match thread tile sizes.
       //
-      // UPDATE: block sizes BM and BN have to match GEMM tile size
+      // PARAM: block sizes BM and BN have to match GEMM tile size
       %BM = memref.dim %subview, %c0 : memref<64x128xf32, strided<[128, 1], offset: ?>>
       %BN = memref.dim %subview_0, %c1 : memref<128x64xf32, strided<[128, 1], offset: ?>>
       %BK = arith.constant 4 : index
@@ -82,6 +84,8 @@ module attributes {gpu.container_module} {
       %numSubTilesK = arith.ceildivsi %dimK, %BK : index
 
       // Needs constant value for better optimizations.
+      // TODO: add pass to propagate fixed 'gpu.block_dim' and 'gpu.grid_dim' values
+      //
       // %bDimX = gpu.block_dim x // Threadblock size in X (first) dim.
       // %bDimY = gpu.block_dim y // Threadblock size in Y (second) dim.
       %bDimX = arith.constant 16 : index
@@ -89,7 +93,7 @@ module attributes {gpu.container_module} {
       %blockSize = arith.muli %bDimX, %bDimY : index
 
       // Thread caches.
-      // UPDATE: sizes have to match TM and TN
+      // PARAM: sizes have to match TM and TN
       // 
       // Accumulate C tile elements in thread registers.
       // Each thread computes <TMxTN> C tile elements.
@@ -131,10 +135,17 @@ module attributes {gpu.container_module} {
         // Fetch data from GMEM to SMEM using all threads in a threadblock.
         // Each thread has to load 2 elements of A and B tiles.
         //
-        // UPDATE: Step size here should be:
+        // PARAM: Num steps over A subtile:
         // numStepsA = (SMEM cache size = BM * BK) / (threadblocksize = 'block dim x' * 'block dim y')
         %smemSizeA = arith.muli %BM, %BK : index
         %numStepsA = arith.divui %smemSizeA, %blockSize : index
+
+        // PARAM: Number of elements each thread transfers from GMEM to SMEM.
+        //        For example: 1 elements for 1 thread -> 1 element
+        //                     4 elements for 1 thread -> vector load 4 elements
+        //
+        // Compute step size over the subtiles for each thread.
+        // The step depedends on the number of threads and loading strategy.
         %numElemPerT = arith.constant 1 : index
         %stepSize = arith.muli %blockSize, %numElemPerT : index
         scf.for %subtileStep = %c0 to %numStepsA step %c1 {
@@ -147,7 +158,7 @@ module attributes {gpu.container_module} {
           %elemA = memref.load %subview[%rowA, %colA] : memref<64x128xf32, strided<[128, 1], offset: ?>>
           memref.store %elemA, %smemA[%rowA, %tColA] : memref<64x4xf32, #gpu.address_space<workgroup>>
         }
-        // UPDATE: Step size here:
+        // PARAM: Num steps over B subtile:
         // numStepsB = (SMEM cache size = BN * BK) / (threadblocksize = 'block dim x' * 'block dim y')
         %smemSizeB = arith.muli %BK, %BN : index
         %numStepsB = arith.divui %smemSizeB, %blockSize : index

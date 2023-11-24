@@ -18,13 +18,13 @@ module attributes {gpu.container_module} {
     %c16 = arith.constant 16 : index
     %c32 = arith.constant 32 : index
     // In this example, the matmul tile is <32x32>.
-    // However, each thread will compute <8x8> C tile elements.
-    // Thus, the block size is reduced to <16x16> threads.
+    // However, each thread will compute <4x4> C tile elements.
+    // Thus, the block size is reduced to <8x8> threads.
     gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%c32, %c32, %c1) threads in (%c8, %c8, %c1)  args(%arg0 : memref<1024x1024xf32>, %arg1 : memref<1024x1024xf32>, %arg2 : memref<1024x1024xf32>, %c0 : index, %c32 : index, %c1 : index)
     return
   }
   gpu.module @entry_kernel {
-    gpu.func @entry_kernel(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 16, 16, 1>, gpu.known_grid_size = array<i32: 2, 2, 1>} {
+    gpu.func @entry_kernel(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 8, 8, 1>, gpu.known_grid_size = array<i32: 32, 32, 1>} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
       %c2 = arith.constant 2 : index
@@ -95,7 +95,7 @@ module attributes {gpu.container_module} {
           // NOTE: These loads can be vectorized to increase performance.
           // NOTE: CUDA compiler might unroll this loop and vectorize the loads.
           %elemC = memref.load %subview_1[%cRow, %cCol] : memref<32x32xf32, strided<[1024, 1], offset: ?>>
-          // memref.store %elemC, %regC[%tm, %tn] : memref<?x?xf32, #spirv.storage_class<Function>>
+          memref.store %elemC, %regC[%tm, %tn] : memref<?x?xf32, #spirv.storage_class<Function>>
         }
       }
 
@@ -132,7 +132,7 @@ module attributes {gpu.container_module} {
 
           // A tile 4 consecutive elements -> coalesced GMEM load [medium].
           %elemA = memref.load %subview[%rowA, %colA] : memref<32x1024xf32, strided<[1024, 1], offset: ?>>
-          // memref.store %elemA, %smemA[%rowA, %tColA] : memref<32x4xf32, #spirv.storage_class<Workgroup>>
+          memref.store %elemA, %smemA[%rowA, %tColA] : memref<32x4xf32, #spirv.storage_class<Workgroup>>
         }
         // PARAM: Step size here:
         // numStepsB = (SMEM cache size = BN * BK) / (threadblocksize = 'block dim x' * 'block dim y')

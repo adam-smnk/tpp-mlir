@@ -19,7 +19,7 @@ module attributes {gpu.container_module} {
     %c32 = arith.constant 32 : index
     %c64 = arith.constant 64 : index
     // In this example, the matmul tile is <64x64>.
-    // However, each thread will compute <8x8> C tile elements.
+    // However, each thread will compute <4x4> C tile elements.
     // Thus, the block size is reduced to <16x16> threads.
     gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%c64, %c64, %c1) threads in (%c16, %c16, %c1)  args(%arg0 : memref<4096x4096xf32>, %arg1 : memref<4096x4096xf32>, %arg2 : memref<4096x4096xf32>, %c0 : index, %c64 : index, %c1 : index)
     return
@@ -29,7 +29,7 @@ module attributes {gpu.container_module} {
     memref.global "private" @smemTileA : memref<64x4xf32, #gpu.address_space<workgroup>>
     memref.global "private" @smemTileB : memref<4x64xf32, #gpu.address_space<workgroup>>
 
-    gpu.func @entry_kernel(%arg0: memref<4096x4096xf32>, %arg1: memref<4096x4096xf32>, %arg2: memref<4096x4096xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 16, 16, 1>, gpu.known_grid_size = array<i32: 2, 2, 1>} {
+    gpu.func @entry_kernel(%arg0: memref<4096x4096xf32>, %arg1: memref<4096x4096xf32>, %arg2: memref<4096x4096xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 16, 16, 1>, gpu.known_grid_size = array<i32: 64, 64, 1>} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
       %c2 = arith.constant 2 : index

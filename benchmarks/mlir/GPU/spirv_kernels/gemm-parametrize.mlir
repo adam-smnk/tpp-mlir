@@ -10,7 +10,7 @@
 #map = affine_map<(d0) -> (d0 * 32)>
 
 module attributes {gpu.container_module} {
-  func.func @entry(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>) {
+  func.func @entry(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
     %c0 = arith.constant 0 : index
     %c2 = arith.constant 2 : index
     %c1 = arith.constant 1 : index
@@ -21,7 +21,7 @@ module attributes {gpu.container_module} {
     // However, each thread will compute <4x4> C tile elements.
     // Thus, the block size is reduced to <8x8> threads.
     gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%c32, %c32, %c1) threads in (%c8, %c8, %c1)  args(%arg0 : memref<1024x1024xf32>, %arg1 : memref<1024x1024xf32>, %arg2 : memref<1024x1024xf32>, %c0 : index, %c32 : index, %c1 : index)
-    return
+    return %arg2 : memref<1024x1024xf32>
   }
   gpu.module @entry_kernel {
     gpu.func @entry_kernel(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 8, 8, 1>, gpu.known_grid_size = array<i32: 32, 32, 1>} {

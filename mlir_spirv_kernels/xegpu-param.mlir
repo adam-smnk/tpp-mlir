@@ -11,15 +11,23 @@
 #mapCol = affine_map<(d0) -> (d0 * 32)>
 
 module attributes {gpu.container_module} {
-  func.func @entry(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
+  func.func @entry(%arg0: memref<128x1024xf16>, %arg1: memref<1024x1024xf16>, %arg2: memref<128x1024xf32>) -> memref<1024x1024xf32> {
     %c0 = arith.constant 0 : index
-    %c2 = arith.constant 2 : index
     %c1 = arith.constant 1 : index
+    %c2 = arith.constant 2 : index
     %c8 = arith.constant 8 : index
     %c16 = arith.constant 16 : index
     %c32 = arith.constant 32 : index
 
-    gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%c32, %c32, %c1) threads in (%c2, %c2, %c1)  args(%arg0 : memref<1024x1024xf32>, %arg1 : memref<1024x1024xf32>, %arg2 : memref<1024x1024xf32>, %c0 : index, %c32 : index, %c1 : index)
+    %tileSizeX = arith.constant 16 : index
+    %tileSizeY = arith.constant 32 : index
+
+    %dimM = memref.dim %arg2, %c0 : memref<128x1024xf32>
+    %dimN = memref.dim %arg2, %c1 : memref<128x1024xf32>
+    %numTilesX = arith.divui %dimM, %tileSizeX : index
+    %numTilesY = arith.divui %dimN, %tileSizeY : index
+
+    gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%numTilesX, %numTilesY, %c1) threads in (%c2, %c2, %c1)  args(%arg0 : memref<128x1024xf16>, %arg1 : memref<1024x1024xf16>, %arg2 : memref<128x1024xf32>, %c0 : index, %c32 : index, %c1 : index)
     return %arg2 : memref<1024x1024xf32>
   }
   gpu.module @entry_kernel {
@@ -59,7 +67,7 @@ module attributes {gpu.container_module} {
       %BM = memref.dim %blockC, %c0 : memref<16x32xf32, strided<[1024, 1], offset: ?>>
       %BN = memref.dim %blockC, %c1 : memref<16x32xf32, strided<[1024, 1], offset: ?>>
       %BK = arith.constant 32 : index // == %blockDimK - matches inner block tile dim size
-      %numThreadTiles = arith.divsi %BK, %TN : index
+      %numThreadTiles = arith.divui %BK, %TN : index
 
       // Find size of the GEMM tiles reduction dimension.
       %dimK = memref.dim %blockA, %c1 : memref<16x1024xf16, strided<[1024, 1], offset: ?>>

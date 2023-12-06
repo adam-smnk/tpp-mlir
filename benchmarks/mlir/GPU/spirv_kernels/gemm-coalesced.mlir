@@ -6,13 +6,13 @@
 // Improved GMEM access with coalesced warp loads.
 #map = affine_map<(d0) -> (d0 * 32)>
 module attributes {gpu.container_module} {
-  func.func @entry(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>) {
+  func.func @entry(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>) -> memref<1024x1024xf32> {
     %c32 = arith.constant 32 : index
     %c1 = arith.constant 1 : index
     %c0 = arith.constant 0 : index
     %c1024 = arith.constant 1024 : index
     gpu.launch_func  @entry_kernel::@entry_kernel blocks in (%c32, %c32, %c1) threads in (%c32, %c32, %c1)  args(%arg0 : memref<1024x1024xf32>, %arg1 : memref<1024x1024xf32>, %arg2 : memref<1024x1024xf32>, %c0 : index, %c1024 : index, %c1 : index)
-    return
+    return %arg2 : memref<1024x1024xf32>
   }
   gpu.module @entry_kernel {
     gpu.func @entry_kernel(%arg0: memref<1024x1024xf32>, %arg1: memref<1024x1024xf32>, %arg2: memref<1024x1024xf32>, %arg3: index, %arg4: index, %arg5: index) kernel attributes {gpu.known_block_size = array<i32: 32, 32, 1>, gpu.known_grid_size = array<i32: 32, 32, 1>} {

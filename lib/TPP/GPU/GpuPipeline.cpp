@@ -157,6 +157,12 @@ private:
     pm.addPass(createBufferize(BufferizeOptions{dealloc}));
     pm.addNestedPass<func::FuncOp>(createCleanup());
 
+    // Force all Linalg ops into GPU kernels.
+    // TODO: Remove this step. Operations without parallel loops
+    //       after tile-and-fuse should not be offloaded.
+    //       However, many tests currently rely on this behavior.
+    pm.addNestedPass<func::FuncOp>(createMapLinalgToGpu());
+
     // Select suitable workloads to GPU by creating GPU kernel launches.
     pm.addPass(createLaunchOnGpu());
 
@@ -164,6 +170,11 @@ private:
     pm.addNestedPass<func::FuncOp>(createLinalgDeGeneralize());
     pm.addNestedPass<func::FuncOp>(
         createLinalgToGpu(LinalgToGpuOptions{gpuWmma, wmmaTileSizes}));
+
+    // Convert all remaining Linalg ops into simple loops.
+    // TODO: Only lower outlined Linalg ops.
+    pm.addNestedPass<func::FuncOp>(createConvertLinalgToLoopsPass());
+
     pm.addNestedPass<func::FuncOp>(createCleanup());
 
     // Outline GPU kernels.

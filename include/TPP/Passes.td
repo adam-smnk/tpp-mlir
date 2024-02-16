@@ -455,6 +455,18 @@ def FoldXsmmFlags : Pass<"fold-xsmm-flags", "func::FuncOp"> {
   let dependentDialects = [ "memref::MemRefDialect", "xsmm::XsmmDialect" ];
 }
 
+def MapLinalgToGpu : Pass<"map-linalg-to-gpu", "func::FuncOp"> {
+  let summary = "Force linalg operation mapping to GPU kernels";
+  let description = [{
+    Wraps linalg operations in parallel loops to enforce mapping
+    to GPU kernels.
+    The pass does nothing if operations are already nested within
+     parallel loops.
+  }];
+  let dependentDialects = ["scf::SCFDialect",
+                           "linalg::LinalgDialect"];
+}
+
 def LaunchOnGpu : Pass<"launch-on-gpu", "ModuleOp"> {
   let summary = "Map and outline workloads to gpu launch operations";
   let description = [{

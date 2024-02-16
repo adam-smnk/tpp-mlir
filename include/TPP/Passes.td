@@ -328,19 +328,6 @@ def GpuPipeline : Pass<"gpu-pipeline", "ModuleOp"> {
   ];
 }
 
-def GpuConversion : Pass<"gpu-conversion", "ModuleOp"> {
-  let summary = "Convert operations to GPU";
-  let description = [{
-    Convert all eligble operations into generic GPU operations.
-  }];
-  let options = [
-    Option<"useWmma", "wmma",
-           "bool", /*default=*/"false",
-           "Use WMMA operations">,
-    ListOption<"warpTile", "warp-tile", "int64_t", "Warp tile sizes MxNxK">,
-  ];
-}
-
 def GpuToCuda : Pass<"gpu-to-cuda", "ModuleOp"> {
   let summary = "Lower generic GPU operations to CUDA backend";
   let options = [
@@ -466,6 +453,17 @@ def FoldXsmmFlags : Pass<"fold-xsmm-flags", "func::FuncOp"> {
     the zero is folded as `beta_0` in `xsmm.gemm.dispatch`.
   }];
   let dependentDialects = [ "memref::MemRefDialect", "xsmm::XsmmDialect" ];
+}
+
+def LaunchOnGpu : Pass<"launch-on-gpu", "ModuleOp"> {
+  let summary = "Map and outline workloads to gpu launch operations";
+  let description = [{
+    Launches workloads on GPU through parallel loop mapping.
+    The kernels are not yet outlined into gpu modules in this step.
+  }];
+  let dependentDialects = ["scf::SCFDialect",
+                           "gpu::GPUDialect",
+                           "memref::MemRefDialect"];
 }
 
 #endif // TPP_DIALECT_TPP_PASSES

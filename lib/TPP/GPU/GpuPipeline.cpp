@@ -155,14 +155,25 @@ private:
     pm.addPass(createLowerPacksAndUnPacks());
     bool dealloc = gpuType != GpuType::Cuda;
     pm.addPass(createBufferize(BufferizeOptions{dealloc}));
-    pm.addPass(createConvertForAllToParallelOp());
     pm.addNestedPass<func::FuncOp>(createCleanup());
 
-    // Convert to generic GPU ops.
-    pm.addPass(
-        createGpuConversion(GpuConversionOptions{gpuWmma, wmmaTileSizes}));
+    // Select suitable workloads to GPU by creating GPU kernel launches.
+    pm.addPass(createLaunchOnGpu());
 
-    // Lower GPU ops to the chosen GPU backend.
+    // Convert Linalg operations to GPU kernels.
+    pm.addNestedPass<func::FuncOp>(createLinalgDeGeneralize());
+    pm.addNestedPass<func::FuncOp>(
+        createLinalgToGpu(LinalgToGpuOptions{gpuWmma, wmmaTileSizes}));
+    pm.addNestedPass<func::FuncOp>(createCleanup());
+
+    // Outline GPU kernels.
+    pm.addPass(createGpuKernelOutliningPass());
+
+    // Generic cleanup.
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(createCSEPass());
+
+    // Lower GPU kernels to the chosen GPU backend.
     switch (gpuType) {
     case GpuType::Cuda: {
       // Perform explicit GPU data transfers only for CUDA as the unified

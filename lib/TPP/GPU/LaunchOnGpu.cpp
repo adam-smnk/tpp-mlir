@@ -1,4 +1,4 @@
-//===- GpuConversion.cpp -----------------------------------------*- C++-*-===//
+//===- LaunchOnGpu.cpp -------------------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,26 +11,20 @@
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/Transforms/Passes.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Transforms/Passes.h"
 
-#include "TPP/Dialect/Transform/LinalgXTransformOps.h"
 #include "TPP/PassUtils.h"
-
-#include <optional>
 
 using namespace mlir;
 using namespace mlir::tpp;
 
 namespace mlir {
 namespace tpp {
-#define GEN_PASS_DEF_GPUCONVERSION
+#define GEN_PASS_DEF_LAUNCHONGPU
 #include "TPP/Passes.h.inc"
 } // namespace tpp
 } // namespace mlir
@@ -38,16 +32,9 @@ namespace tpp {
 namespace {
 
 // Map and lower operations to generic GPU ops.
-struct GpuConversion : public tpp::impl::GpuConversionBase<GpuConversion>,
-                       UtilityPassBase<ModuleOp> {
-  using GpuConversionBase::GpuConversionBase;
-
-  void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<linalg::LinalgDialect>();
-    registry.insert<scf::SCFDialect>();
-    registry.insert<memref::MemRefDialect>();
-    registry.insert<gpu::GPUDialect>();
-  }
+struct LaunchOnGpu : public tpp::impl::LaunchOnGpuBase<LaunchOnGpu>,
+                     UtilityPassBase<ModuleOp> {
+  using LaunchOnGpuBase::LaunchOnGpuBase;
 
   void runOnOperation() override {
     auto module = getOperation();
@@ -65,25 +52,15 @@ private:
   void constructPipeline() override {
     pm.clear();
 
-    // First lower linalg using custom patterns then fall back to
-    // the default lowering for any remaining ops.
-    pm.addNestedPass<func::FuncOp>(createLinalgDeGeneralize());
-    pm.addNestedPass<func::FuncOp>(
-        createLinalgToGpu(LinalgToGpuOptions{useWmma, warpTile}));
-    pm.addNestedPass<func::FuncOp>(createConvertLinalgToParallelLoopsPass());
+    // Map scf.forall loops left from prebufferization to paralell loops
+    // to enable GPU mapping.
+    pm.addPass(createConvertForAllToParallelOp());
 
-    // Map loops into GPU kernels.
+    // Map and launch parallel loops as GPU kernels.
     pm.addNestedPass<func::FuncOp>(createGpuMapParallelLoopsPass());
     pm.addNestedPass<func::FuncOp>(createParallelLoopToGpuPass());
 
     pm.addNestedPass<func::FuncOp>(createCleanup());
-
-    // Create GPU kernels.
-    pm.addPass(createGpuKernelOutliningPass());
-
-    // Generic cleanup.
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createCSEPass());
   }
 };
 

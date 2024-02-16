@@ -1,7 +1,7 @@
 add_mlir_library(TPPGPU
   Utils.cpp
   GpuPipeline.cpp
-  GpuConversion.cpp
+  LaunchOnGpu.cpp
   GpuToCuda.cpp
   GpuToVulkan.cpp
   SetSPIRVCapabilities.cpp

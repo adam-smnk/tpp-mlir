@@ -5,22 +5,15 @@
 #ifndef CHECK_DIALECT_CHECK_OPS
 #define CHECK_DIALECT_CHECK_OPS
 
+include "TPP/Dialect/Check/CheckDialect.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-def CHECK_Dialect : Dialect {
-  let name = "check";
-  let cppNamespace = "::mlir::check";
-  let summary = [{
-    A dialect implementing test assertions.
-  }];
-}
 
 //===----------------------------------------------------------------------===//
 // ExpectTrueOp
 //===----------------------------------------------------------------------===//
 
-def CHECK_ExpectTrueOp : Op<CHECK_Dialect, "expect_true",
+def CHECK_ExpectTrueOp : Check_Op<"expect_true",
     [MemoryEffects<[MemWrite, MemRead]>]> {
   let summary = [{Checks that the operand is true}];
   let description = [{
@@ -46,7 +39,7 @@ def CHECK_ExpectTrueOp : Op<CHECK_Dialect, "expect_true",
 //===----------------------------------------------------------------------===//
 
 def CHECK_ExpectAlmostEqOp :
-    Op<CHECK_Dialect, "expect_almost_eq",
+    Check_Op<"expect_almost_eq",
     [TypesMatchWith<"Operand types match",
                     "lhs", "rhs",
                     "cast<ShapedType>($_self)">,
@@ -79,7 +72,7 @@ def CHECK_ExpectAlmostEqOp :
 //===----------------------------------------------------------------------===//
 
 def CHECK_ExpectSaneOp :
-    Op<CHECK_Dialect, "expect_sane", [MemoryEffects<[MemWrite, MemRead]>]> {
+    Check_Op<"expect_sane", [MemoryEffects<[MemWrite, MemRead]>]> {
   let summary = [{Checks that the operand is neither NaN nor infinite}];
   let description = [{
     Verifies that the contents of tensor operand with float elements
@@ -100,4 +93,4 @@ def CHECK_ExpectSaneOp :
   }];
 }
 
-#endif
+#endif // CHECK_DIALECT_CHECK_OPS

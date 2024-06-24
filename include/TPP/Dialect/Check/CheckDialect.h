@@ -9,18 +9,9 @@
 #ifndef TPP_DIALECT_CHECK_CHECKDIALECT_H
 #define TPP_DIALECT_CHECK_CHECKDIALECT_H
 
+// clang-format off
 #include "mlir/IR/Dialect.h"
-
-namespace mlir {
-namespace check {
-
-class CheckDialect : public Dialect {
-public:
-  explicit CheckDialect(MLIRContext *context);
-  static StringRef getDialectNamespace() { return "check"; }
-};
-
-} // namespace check
-} // namespace mlir
+#include "TPP/Dialect/Check/CheckOpsDialect.h.inc"
+// clang-format on
 
 #endif // TPP_DIALECT_CHECK_CHECKDIALECT_H

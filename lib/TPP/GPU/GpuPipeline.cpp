@@ -86,6 +86,7 @@ enum class GpuType {
   Cuda,
   Vulkan,
   Intel,
+  TEST,
 };
 
 GpuType parseGpuOption(StringRef gpuStr) {
@@ -93,6 +94,7 @@ GpuType parseGpuOption(StringRef gpuStr) {
                   .CaseLower("cuda", GpuType::Cuda)
                   .CaseLower("vulkan", GpuType::Vulkan)
                   .CaseLower("intel", GpuType::Intel)
+                  .CaseLower("test", GpuType::TEST)
                   .Default(std::nullopt);
   assert(type && "Unsupported GPU backend");
 
@@ -115,6 +117,7 @@ GpuOptions getGpuOptions(GpuType gpuType) {
     options.features = "+ptx60";
     break;
   }
+  case GpuType::TEST:
   case GpuType::Vulkan:
   case GpuType::Intel: {
     // No options needed at the moment.
@@ -167,6 +170,74 @@ private:
   void constructPipeline() override {
     GpuType gpuType = parseGpuOption(this->gpuBackend);
     GpuOptions gpuOptions = getGpuOptions(gpuType);
+
+    if (gpuType == GpuType::TEST) {
+      // Current focus on Intel SIMD/VectorCompute outlining toward XeGPU.
+      pm.addPass(createCleanup());
+
+      // # Tile and fuse to expose parallelism for kernel outlining.
+      // Tile into GPU blocks - workload per block.
+      TileConsumerAndFuseProducersOptions blockTileOptions;
+      blockTileOptions.tileSizes = gpuBlockTile;
+      blockTileOptions.minTileFactor = 1;
+      pm.addPass(createTileConsumerAndFuseProducers(blockTileOptions));
+      // Tile again to subdivide GPU blocks - workload per warp/subgroup.
+      TileConsumerAndFuseProducersOptions threadTileOptions;
+      threadTileOptions.tileSizes = gpuThreadTile;
+      threadTileOptions.minTileFactor = 1;
+      pm.addPass(createTileConsumerAndFuseProducers(threadTileOptions));
+
+      // # Bufferize to allow GPU kernel creation.
+      // Generic preprocessign and bufferization.
+      pm.addPass(createLowerPacksAndUnPacks());
+      pm.addPass(createBufferize(BufferizeOptions{/*dealloc=*/false}));
+      pm.addPass(createConvertForAllToParallelOp());
+      pm.addPass(createCleanup());
+
+      // # Prepare operations for offloading to GPU.
+      // Convert workloads into `gpu.launch` to narrow down scope for further
+      // lowering toward GPU abstraction.
+      // TODO: Customize parallel loop mapping to reflect whether we're at the
+      //       warp/subgroup or thread/workitem abstraction.
+      //       This should be good point to steer outlining to create
+      //       correct number of "threads" - SIMD vs SIMT.
+      pm.addNestedPass<func::FuncOp>(createGpuMapParallelLoopsPass());
+      pm.addNestedPass<func::FuncOp>(createParallelLoopToGpuPass());
+      pm.addPass(createCleanup());
+
+      // # High-level GPU optimizations
+      // TODO: linalg.matmul tile K-dim
+      // TODO: insert memref.prefetches
+
+      // # Lower GPU kernel operations into fitting GPU execution model.
+      // Vectorize operation to hardware and warp/subgroup abstraction.
+      pm.addPass(createGpuVectorize());
+      // Lower to available intrisics or SIMD/SIMT operations.
+      // Target Intel GPU.
+      // TODO: Vector to XeGPU
+      // TODO: Vector to Arith
+
+      // # Materialized separate kernel functions.
+      // GPU kernel outlining.
+      pm.addNestedPass<func::FuncOp>(createGpuInlineConstants());
+      pm.addPass(createGpuKernelOutliningPass());
+      pm.addPass(createCanonicalizerPass());
+      pm.addPass(createCSEPass());
+
+      // # Postprocessing - last mile passes
+      // Target Intel GPU.
+      pm.addPass(xegpu::createXeGPUFoldAliasOps());
+      std::string clientApi = "intel";
+      SetSPIRVCapabilitiesOptions capabilitiesOptions{clientApi};
+      pm.addPass(tpp::createSetSPIRVCapabilities(capabilitiesOptions));
+      SetSPIRVAbiAttributeOptions abiAttrOptions{clientApi};
+      pm.addPass(tpp::createSetSPIRVAbiAttribute(abiAttrOptions));
+
+      pm.addPass(createLocalDialectsLowering());
+      pm.addPass(createCleanup());
+
+      return;
+    }
 
     // Tile to split the kernel into threads and blocks.
     // Use default tiling to handle both packed and unpacked ops.
@@ -221,7 +292,7 @@ private:
       pm.addPass(createGpuToVulkan());
       break;
     }
-    case GpuType::Intel:
+    case GpuType::Intel: {
       pm.addPass(xegpu::createXeGPUFoldAliasOps());
 
       std::string clientApi = "intel";
@@ -231,6 +302,11 @@ private:
       pm.addPass(tpp::createSetSPIRVAbiAttribute(abiAttrOptions));
 
       break;
+    }
+    case GpuType::TEST: {
+      assert(false && "INVALID GPU TEST PATH");
+      break;
+    }
     }
 
     // Covert all local dialects like perf.

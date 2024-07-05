@@ -517,4 +517,18 @@ def FoldIntoEltwise : Pass<"fold-into-eltwise", "ModuleOp"> {
                            "affine::AffineDialect"];
 }
 
+def GpuVectorize : Pass<"gpu-vectorize", "ModuleOp"> {
+  let summary = "Vectorize GPU kernel.";
+  let description = [{
+    Convert GPU kernel ops to vectorized representation.
+    Lowers memref-level operations to hardware compatible sizes.
+  }];
+  let dependentDialects = ["linalg::LinalgDialect",
+                           "gpu::GPUDialect",
+                           "scf::SCFDialect",
+                           "memref::MemRefDialect",
+                           "arith::ArithDialect",
+                           "vector::VectorDialect"];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

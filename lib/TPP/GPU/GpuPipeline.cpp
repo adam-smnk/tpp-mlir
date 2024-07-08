@@ -212,6 +212,7 @@ private:
       // # Lower GPU kernel operations into fitting GPU execution model.
       // Vectorize operation to hardware and warp/subgroup abstraction.
       pm.addPass(createGpuVectorize());
+      pm.addPass(createGpuVectorTile());
       // Lower to available intrisics or SIMD/SIMT operations.
       // Target Intel GPU.
       // TODO: Vector to XeGPU

@@ -548,4 +548,15 @@ def GpuVectorize : Pass<"gpu-vectorize", "ModuleOp"> {
                            "vector::VectorDialect"];
 }
 
+def GpuVectorTile : Pass<"gpu-vector-tile", "ModuleOp"> {
+  let summary = "Split GPU kernel vector ops to match hardware sizes.";
+  let description = [{
+    Reshape vector operations within GPU kernel to match available hardware
+    computational resources.
+  }];
+  let dependentDialects = ["math::MathDialect",
+                           "arith::ArithDialect",
+                           "vector::VectorDialect"];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

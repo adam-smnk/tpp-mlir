@@ -543,6 +543,7 @@ def GpuVectorize : Pass<"gpu-vectorize", "ModuleOp"> {
                            "gpu::GPUDialect",
                            "scf::SCFDialect",
                            "memref::MemRefDialect",
+                           "math::MathDialect",
                            "arith::ArithDialect",
                            "vector::VectorDialect"];
 }

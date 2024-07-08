@@ -15,9 +15,12 @@
 #include "mlir/Dialect/GPU/Transforms/Passes.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Passes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/Dialect/Vector/Transforms/LoweringPatterns.h"
+#include "mlir/Dialect/Vector/Transforms/VectorTransforms.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -35,6 +38,28 @@ namespace tpp {
 
 namespace {
 
+struct VectorizeGpuLaunch : public OpRewritePattern<gpu::LaunchOp> {
+  using OpRewritePattern<gpu::LaunchOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(gpu::LaunchOp launchOp,
+                                PatternRewriter &rewriter) const override {
+    // Vectorize all Linalg ops within GPU kernel.
+    // It is expected that the ops operate on statically sized tiles.
+    auto walkResult = launchOp->walk([&](linalg::LinalgOp linalgOp) {
+      if (failed(vectorize(rewriter, linalgOp, /*inputVectorSizes=*/{},
+                           /*scalableVecDims=*/{})))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
+
+    if (walkResult.wasInterrupted())
+      return rewriter.notifyMatchFailure(
+          launchOp, "Failed to vectorize ops within GPU launch");
+
+    return success();
+  }
+};
+
 // Transfer data from host to a GPU device.
 struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
   using GpuVectorizeBase::GpuVectorizeBase;
@@ -42,6 +67,17 @@ struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
   void runOnOperation() override {
     MLIRContext *ctx = getOperation().getContext();
     RewritePatternSet patterns(ctx);
+
+    // Vectorize core computation ops within kernel launch.
+    patterns.add<VectorizeGpuLaunch>(ctx);
+
+    // Vector postprocessing patterns.
+    vector::populateVectorTransferPermutationMapLoweringPatterns(patterns);
+    vector::populateVectorReductionToContractPatterns(patterns);
+    vector::populateSinkVectorBroadcastPatterns(patterns);
+    vector::TransferReadOp::getCanonicalizationPatterns(patterns, ctx);
+    vector::TransferWriteOp::getCanonicalizationPatterns(patterns, ctx);
+
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 };

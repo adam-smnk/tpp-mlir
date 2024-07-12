@@ -556,7 +556,8 @@ def GpuVectorTile : Pass<"gpu-vector-tile", "ModuleOp"> {
   }];
   let dependentDialects = ["math::MathDialect",
                            "arith::ArithDialect",
-                           "vector::VectorDialect"];
+                           "vector::VectorDialect",
+                           "affine::AffineDialect"];
 }
 
 #endif // TPP_DIALECT_TPP_PASSES

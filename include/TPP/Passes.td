@@ -11,6 +11,14 @@
 
 include "mlir/Pass/PassBase.td"
 
+def Test : Pass<"test", "ModuleOp"> {
+  let summary = "Test pass.";
+  let dependentDialects = ["linalg::LinalgDialect",
+                           "scf::SCFDialect",
+                           "memref::MemRefDialect",
+                           "arith::ArithDialect"];
+}
+
 def ConvertLinalgToXsmm : Pass<"convert-linalg-to-xsmm", "func::FuncOp"> {
   let summary = "Convert linalg to xsmm";
   let description = [{

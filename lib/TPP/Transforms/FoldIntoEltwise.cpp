@@ -45,8 +45,8 @@ reindexProducerOperandIntoConsumer(AffineMap producerOperandMap,
   return operandToResultMap.compose(consumerMap);
 }
 
-// Fold linalg.broadcast into a linalg elementwise operation.
-struct BroadcastIntoEltwise
+// Fold linalg unary producer op into a linalg elementwise operation.
+struct UnaryProducerIntoEltwise
     : public OpInterfaceRewritePattern<linalg::LinalgOp> {
   using OpInterfaceRewritePattern<linalg::LinalgOp>::OpInterfaceRewritePattern;
 
@@ -59,13 +59,17 @@ struct BroadcastIntoEltwise
     if (!linalgOp.hasPureTensorSemantics())
       return rewriter.notifyMatchFailure(linalgOp, "expects tensor semantics");
 
-    // Look for broadcasts within inputs.
+    auto isFoldableProducer = [](Operation *op) {
+      return isa<linalg::BroadcastOp, linalg::FillOp>(op);
+    };
+
+    // Look for foldable producers within inputs.
     // Reshaping output might be less beneficial and it is not considered now.
-    if (llvm::none_of(linalgOp.getDpsInputs(), [](Value input) {
+    if (llvm::none_of(linalgOp.getDpsInputs(), [&](Value input) {
           auto op = input.getDefiningOp();
-          return op && isa<linalg::BroadcastOp>(op);
+          return op && isFoldableProducer(op);
         }))
-      return rewriter.notifyMatchFailure(linalgOp, "no broadcast producers");
+      return rewriter.notifyMatchFailure(linalgOp, "no foldable producers");
 
     SmallVector<Value> inputs = linalgOp.getDpsInputs();
     ValueRange outputs = linalgOp.getDpsInits();
@@ -75,19 +79,19 @@ struct BroadcastIntoEltwise
     SmallVector<Type> resultTypes = TypeRange(ValueRange{outputs});
 
     for (auto [idx, input] : llvm::enumerate(linalgOp.getDpsInputs())) {
-      auto broadcast = input.getDefiningOp<linalg::BroadcastOp>();
-      if (!broadcast)
+      auto producerOp = input.getDefiningOp<linalg::LinalgOp>();
+      if (!producerOp || !isFoldableProducer(producerOp))
         continue;
 
       // Update indexing maps.
-      // The broadcasting can be captured by indexing maps alone w.r.t broadcast
-      // input and consumer iteration domain.
+      // The producer input operand can be captured by indexing maps alone w.r.t
+      // producer input and consumer iteration domain.
       indexingMaps[idx] = reindexProducerOperandIntoConsumer(
-          broadcast.getMatchingIndexingMap(broadcast.getDpsInputOperand(0)),
-          broadcast.getMatchingIndexingMap(broadcast.getDpsInitOperand(0)),
+          producerOp.getMatchingIndexingMap(producerOp.getDpsInputOperand(0)),
+          producerOp.getMatchingIndexingMap(producerOp.getDpsInitOperand(0)),
           indexingMaps[idx]);
-      // Use the broadcast input directly instead of the broadcast result.
-      inputs[idx] = broadcast.getInput();
+      // Use the producer input directly instead of the producer result.
+      inputs[idx] = producerOp.getDpsInputs()[0];
     }
 
     // All Linalg ops have a region attached that can be inlined.
@@ -105,93 +109,10 @@ struct BroadcastIntoEltwise
   }
 };
 
-// Folds linalg.max(linalg.fill(%cst), ...) into linalg.generic op.
-// For example, rewrites:
-//   %fill = linalg.fill %cst
-//   linalg.max %val %fill
-// into:
-//   linalg.generic
-//     arith.max %in, %cst
-//
-// NOTE: This could be achieved by controlled generalization + linalg eltwise
-//       operation fusion using the upstream linalg fusion pass and the upstream
-//       `linalg-inline-scalar-operands` pass extended to support scalar
-//       non-shaped inputs.
-// TODO: Linalg eltwise fusion pass could be generalized to operate on LinalgOp
-//       instead of GenericOp.
-// TODO: Extend linalg scalar inlining pass.
-struct FillIntoMax : public OpRewritePattern<linalg::MaxOp> {
-  using OpRewritePattern<linalg::MaxOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(linalg::MaxOp maxOp,
-                                PatternRewriter &rewriter) const override {
-    if (!maxOp.hasPureTensorSemantics())
-      return rewriter.notifyMatchFailure(maxOp, "expects tensor semantics");
-
-    // Look for fill within inputs.
-    if (llvm::none_of(maxOp.getInputs(), [](Value input) {
-          auto op = input.getDefiningOp();
-          return op && isa<linalg::FillOp>(op);
-        }))
-      return rewriter.notifyMatchFailure(maxOp, "no fill producers");
-
-    SmallVector<Value> inputs;
-    SmallVector<AffineMap> indexingMaps;
-    SmallVector<Value> constants;
-
-    for (auto [idx, input] : llvm::enumerate(maxOp.getInputs())) {
-      auto fillOp = input.getDefiningOp<linalg::FillOp>();
-      if (!fillOp) {
-        // Keep the operand as is.
-        inputs.push_back(input);
-        indexingMaps.push_back(
-            maxOp.getMatchingIndexingMap(maxOp.getDpsInputOperand(idx)));
-        continue;
-      }
-
-      // TODO: Check if there is any benefit in this over passing scalar
-      //       as an input argument.
-      // Store the constant separately to be later inserted directly into
-      // generic's body.
-      assert(fillOp.getInputs().size() == 1 &&
-             "expect fill to have single input");
-      constants.push_back(fillOp.getInputs()[0]);
-    }
-
-    // Add indexing map of the output.
-    indexingMaps.push_back(
-        maxOp.getMatchingIndexingMap(maxOp.getDpsInitOperand(0)));
-
-    ValueRange outputs = maxOp.getOutputs();
-    SmallVector<utils::IteratorType> iterators = maxOp.getIteratorTypesArray();
-    SmallVector<Type> resultTypes = TypeRange(ValueRange{outputs});
-
-    // Replace the original op with a generic with broadcast folded in.
-    auto genericOp = rewriter.create<linalg::GenericOp>(
-        maxOp.getLoc(), resultTypes, inputs, outputs, indexingMaps, iterators,
-        [&](OpBuilder &nestedBuilder, Location nestedLoc,
-            ValueRange blockArgs) {
-          SmallVector<Value> operands;
-          for (size_t i = 0; i < blockArgs.size() - 1; ++i)
-            operands.push_back(blockArgs[i]);
-          operands.append(constants);
-          Value max;
-          if (isa<FloatType>(getElementTypeOrSelf(resultTypes[0])))
-            max = nestedBuilder.create<arith::MaximumFOp>(nestedLoc, operands);
-          else
-            max = nestedBuilder.create<arith::MaxSIOp>(nestedLoc, operands);
-          nestedBuilder.create<linalg::YieldOp>(nestedLoc, ValueRange{max});
-        });
-    rewriter.replaceOp(maxOp, genericOp->getResults());
-
-    return success();
-  }
-};
-
 struct FoldIntoEltwise : tpp::impl::FoldIntoEltwiseBase<FoldIntoEltwise> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
-    patterns.add<BroadcastIntoEltwise, FillIntoMax>(patterns.getContext());
+    patterns.add<UnaryProducerIntoEltwise>(patterns.getContext());
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 };

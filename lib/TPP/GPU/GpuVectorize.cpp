@@ -74,7 +74,7 @@ struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
     // Vector postprocessing patterns.
     vector::populateVectorTransferPermutationMapLoweringPatterns(patterns);
     vector::populateVectorReductionToContractPatterns(patterns);
-    vector::populateSinkVectorBroadcastPatterns(patterns);
+    vector::populateSinkVectorOpsPatterns(patterns);
     vector::TransferReadOp::getCanonicalizationPatterns(patterns, ctx);
     vector::TransferWriteOp::getCanonicalizationPatterns(patterns, ctx);
 

@@ -77,39 +77,67 @@ static LogicalResult shouldUnrollOp(Operation *op) {
   return success();
 }
 
+static std::optional<SmallVector<int64_t>> get2DLoadStoreShape(VectorType vec) {
+  SmallVector<int64_t> dataTransferShape{vec.getShape()};
+  // Can handle at most 2D shape.
+  if (dataTransferShape.size() > 2)
+    return std::nullopt;
+  // Pad with unit size in case of 1D shape.
+  if (dataTransferShape.size() == 1)
+    dataTransferShape.push_back(1);
+
+  auto elemByteWidth = vec.getElementType().getIntOrFloatBitWidth() / 8;
+  // TODO: Fetch actual list of supported load configs.
+  // TODO: Take into consideration need for VNNI.
+  int64_t maxHeight = 32;
+  int64_t maxWidth = 64 / elemByteWidth;
+
+  dataTransferShape[0] = std::min(dataTransferShape[0], maxHeight);
+  dataTransferShape[1] = std::min(dataTransferShape[1], maxWidth);
+
+  return dataTransferShape;
+}
+
+static std::optional<SmallVector<int64_t>> getEltwiseShape(VectorType vec) {
+  // Can handle at most 2D shape.
+  ArrayRef<int64_t> shape = vec.getShape();
+  if (shape.size() > 2)
+    return std::nullopt;
+
+  // Extract SIMD sized sub-tiles from loaded tiles.
+  // TODO: Fetch SIMD sizes from target descriptor.
+  int64_t maxSizeSIMD = 256;
+
+  // Thus, split the registers into contiguous smaller slices. The current
+  // hardware load restrictions ensure that the loaded tile width will not
+  // exceed SIMD size.
+  //
+  // Take as wide lane as possible first.
+  int64_t cols = std::min(shape.back(), maxSizeSIMD);
+
+  SmallVector<int64_t> eltwiseShape;
+  if (shape.size() == 2) {
+    // In case of 2D shape, add rows if possible to fill up SIMD lane.
+    int64_t rows = std::min(shape[0], maxSizeSIMD / cols);
+    eltwiseShape.push_back(rows);
+  }
+  eltwiseShape.push_back(cols);
+
+  return eltwiseShape;
+}
+
 static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
-  // return std::nullopt;
-  // return SmallVector<int64_t>{8, 8};
-  if (isa<arith::AddFOp, arith::SelectOp, arith::CmpFOp>(op))
-    return SmallVector<int64_t>{4, 4};
+  if (OpTrait::hasElementwiseMappableTraits(op) && op->getNumResults() == 1) {
+    if (auto vecType = dyn_cast<VectorType>(op->getResult(0).getType()))
+      return getEltwiseShape(vecType);
+  }
   if (isa<vector::ContractionOp>(op))
-    return SmallVector<int64_t>{4, 4, 4};
-  // For transfer ops, just propagate the shape coming from
-  // InsertStridedSlices/ExtractStridedSlices.
-  if (auto readOp = dyn_cast<vector::TransferReadOp>(op)) {
-    VectorType dstVec;
-    for (Operation *users : readOp->getUsers()) {
-      auto extract = dyn_cast<vector::ExtractStridedSliceOp>(users);
-      if (!extract)
-        return std::nullopt;
-      auto vecType = cast<VectorType>(extract.getResult().getType());
-      if (dstVec && dstVec != vecType)
-        return std::nullopt;
-      dstVec = vecType;
-    }
-    // return SmallVector<int64_t>(dstVec.getShape().begin(),
-    //                             dstVec.getShape().end());
-    return SmallVector<int64_t>(dstVec.getShape().size(), 8);
-  }
-  if (auto writeOp = dyn_cast<vector::TransferWriteOp>(op)) {
-    auto insert =
-        writeOp.getVector().getDefiningOp<vector::InsertStridedSliceOp>();
-    if (!insert)
-      return std::nullopt;
-    ArrayRef<int64_t> shape = insert.getSourceVectorType().getShape();
-    // return SmallVector<int64_t>(shape.begin(), shape.end());
-    return SmallVector<int64_t>(shape.size(), 8);
-  }
+    return SmallVector<int64_t>{8, 16, 16};
+  if (auto readOp = dyn_cast<vector::TransferReadOp>(op))
+    return get2DLoadStoreShape(readOp.getVector().getType());
+  if (auto writeOp = dyn_cast<vector::TransferReadOp>(op))
+    return get2DLoadStoreShape(writeOp.getVector().getType());
+
   return std::nullopt;
 }
 

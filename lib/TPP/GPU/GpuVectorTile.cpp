@@ -64,6 +64,7 @@ static bool isVectorGemm(vector::ContractionOp op) {
   return true;
 }
 
+// Control vector unrolling.
 static LogicalResult shouldUnrollOp(Operation *op) {
   // Only process operations within GPU kernel launch.
   if (!op->getParentOfType<gpu::LaunchOp>())
@@ -77,6 +78,7 @@ static LogicalResult shouldUnrollOp(Operation *op) {
   return success();
 }
 
+// Get data movement sizes for Intel GPU.
 static std::optional<SmallVector<int64_t>> get2DLoadStoreShape(VectorType vec) {
   SmallVector<int64_t> dataTransferShape{vec.getShape()};
   // Can handle at most 2D shape.
@@ -98,6 +100,7 @@ static std::optional<SmallVector<int64_t>> get2DLoadStoreShape(VectorType vec) {
   return dataTransferShape;
 }
 
+// Get elementwise SIMD operations sizes for Intel GPU.
 static std::optional<SmallVector<int64_t>> getEltwiseShape(VectorType vec) {
   // Can handle at most 2D shape.
   ArrayRef<int64_t> shape = vec.getShape();
@@ -126,11 +129,15 @@ static std::optional<SmallVector<int64_t>> getEltwiseShape(VectorType vec) {
   return eltwiseShape;
 }
 
+// Control vector unrolling shapes.
 static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
+  // TODO: Run a separate analysis pass that assigns and propagates
+  //       vector layouts throughout the graph.
   if (OpTrait::hasElementwiseMappableTraits(op) && op->getNumResults() == 1) {
     if (auto vecType = dyn_cast<VectorType>(op->getResult(0).getType()))
       return getEltwiseShape(vecType);
   }
+  // TODO: Only unroll DPAS.
   if (isa<vector::ContractionOp>(op))
     return SmallVector<int64_t>{8, 16, 16};
   if (auto readOp = dyn_cast<vector::TransferReadOp>(op))

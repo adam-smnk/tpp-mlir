@@ -38,14 +38,18 @@ namespace tpp {
 
 namespace {
 
+// Vectorize ops within GPU kernel.
 struct VectorizeGpuLaunch : public OpRewritePattern<gpu::LaunchOp> {
   using OpRewritePattern<gpu::LaunchOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(gpu::LaunchOp launchOp,
                                 PatternRewriter &rewriter) const override {
-    // Vectorize all Linalg ops within GPU kernel.
+    // Vectorize all linalg ops within GPU kernel.
     // It is expected that the ops operate on statically sized tiles.
     auto walkResult = launchOp->walk([&](linalg::LinalgOp linalgOp) {
+      if (linalgOp.hasDynamicShape())
+        return WalkResult::interrupt();
+
       if (failed(vectorize(rewriter, linalgOp, /*inputVectorSizes=*/{},
                            /*scalableVecDims=*/{})))
         return WalkResult::interrupt();
@@ -60,6 +64,32 @@ struct VectorizeGpuLaunch : public OpRewritePattern<gpu::LaunchOp> {
   }
 };
 
+// Vectorize linalg ops targeting GPU.
+struct GpuVectorizeLinalg : public OpInterfaceRewritePattern<linalg::LinalgOp> {
+  using OpInterfaceRewritePattern<linalg::LinalgOp>::OpInterfaceRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::LinalgOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    // Vectorize all Linalg ops within parallelized loops.
+    if (!linalgOp.hasPureTensorSemantics())
+      return rewriter.notifyMatchFailure(linalgOp, "Expects tensor semantics");
+
+    if (linalgOp.hasDynamicShape())
+      return rewriter.notifyMatchFailure(linalgOp,
+                                         "Expects static shapes only");
+
+    // Only process operations within parallelized loops.
+    // TODO: Use some different mechanism like annotations to determine which
+    //       ops target GPU.
+    if (!linalgOp->getParentOfType<scf::ForallOp>())
+      return rewriter.notifyMatchFailure(linalgOp,
+                                         "Expects parallel loop parent");
+
+    return vectorize(rewriter, linalgOp, /*inputVectorSizes=*/{},
+                     /*scalableVecDims=*/{});
+  }
+};
+
 // Transfer data from host to a GPU device.
 struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
   using GpuVectorizeBase::GpuVectorizeBase;
@@ -69,7 +99,7 @@ struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
     RewritePatternSet patterns(ctx);
 
     // Vectorize core computation ops within kernel launch.
-    patterns.add<VectorizeGpuLaunch>(ctx);
+    patterns.add<VectorizeGpuLaunch, GpuVectorizeLinalg>(ctx);
 
     // Vector postprocessing patterns.
     vector::populateVectorTransferPermutationMapLoweringPatterns(patterns);

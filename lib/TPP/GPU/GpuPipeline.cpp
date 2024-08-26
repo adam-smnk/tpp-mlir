@@ -187,6 +187,11 @@ private:
       threadTileOptions.minTileFactor = 1;
       pm.addPass(createTileConsumerAndFuseProducers(threadTileOptions));
 
+      // Vectorize at tensor-level to benefit from better cleanup utilities like
+      // folding.
+      pm.addPass(createGpuVectorize());
+      pm.addPass(createCleanup());
+
       // # Bufferize to allow GPU kernel creation.
       // Generic preprocessign and bufferization.
       pm.addPass(createLowerPacksAndUnPacks());
@@ -211,7 +216,6 @@ private:
 
       // # Lower GPU kernel operations into fitting GPU execution model.
       // Vectorize operation to hardware and warp/subgroup abstraction.
-      pm.addPass(createGpuVectorize());
       pm.addPass(createGpuVectorTile());
       // Lower to available intrisics or SIMD/SIMT operations.
       // Target Intel GPU.

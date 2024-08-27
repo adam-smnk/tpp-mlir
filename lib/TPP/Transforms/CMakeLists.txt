@@ -47,4 +47,5 @@ add_mlir_library(TPPTransforms
     TPPPerfToFunc
     TPPPerfToLoop
     TPPXsmmToFunc
+    TPPVectorToXeGPU
   )

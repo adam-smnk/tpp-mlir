@@ -560,4 +560,12 @@ def GpuVectorTile : Pass<"gpu-vector-tile", "ModuleOp"> {
                            "affine::AffineDialect"];
 }
 
+def ConvertVectorToXeGPU : Pass<"convert-vector-to-xegpu"> {
+  let summary = "Convert Vector dialect to XeGPU dialect";
+  let dependentDialects = ["vector::VectorDialect",
+                           "xegpu::XeGPUDialect",
+                           "memref::MemRefDialect",
+                           "arith::ArithDialect"];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

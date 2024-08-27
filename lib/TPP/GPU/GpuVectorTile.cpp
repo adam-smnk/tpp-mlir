@@ -151,7 +151,7 @@ static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
     return getContractionShape(contract);
   if (auto readOp = dyn_cast<vector::TransferReadOp>(op))
     return get2DLoadStoreShape(readOp.getVector().getType());
-  if (auto writeOp = dyn_cast<vector::TransferReadOp>(op))
+  if (auto writeOp = dyn_cast<vector::TransferWriteOp>(op))
     return get2DLoadStoreShape(writeOp.getVector().getType());
 
   return std::nullopt;

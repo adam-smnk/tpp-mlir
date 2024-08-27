@@ -35,12 +35,33 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
   }
 };
 
+struct TransferWriteLowering
+    : public OpRewritePattern<vector::TransferWriteOp> {
+  using OpRewritePattern<vector::TransferWriteOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(vector::TransferWriteOp writeOp,
+                                PatternRewriter &rewriter) const override {
+    return success();
+  }
+};
+
+struct ContractionLowering : public OpRewritePattern<vector::ContractionOp> {
+  using OpRewritePattern<vector::ContractionOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(vector::ContractionOp contract,
+                                PatternRewriter &rewriter) const override {
+    return success();
+  }
+};
+
 struct ConvertVectorToXeGPU
     : public tpp::impl::ConvertVectorToXeGPUBase<ConvertVectorToXeGPU> {
   void runOnOperation() override {
     auto *ctx = &getContext();
     RewritePatternSet patterns(ctx);
-    patterns.add<TransferReadLowering>(ctx);
+    patterns
+        .add<TransferReadLowering, TransferWriteLowering, ContractionLowering>(
+            ctx);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 };

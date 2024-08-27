@@ -38,6 +38,7 @@ namespace tpp {
 
 namespace {
 
+// Return true if contraction is a simple GEMM.
 static bool isVectorGemm(vector::ContractionOp op) {
   auto *ctx = op.getContext();
 
@@ -70,7 +71,7 @@ static LogicalResult shouldUnrollOp(Operation *op) {
   if (!op->getParentOfType<gpu::LaunchOp>())
     return failure();
 
-  // Only process simple GEMM contraction.
+  // In case of contraction, only process simple GEMM.
   auto contraction = dyn_cast<vector::ContractionOp>(op);
   if (contraction && !isVectorGemm(contraction))
     return failure();
@@ -129,6 +130,15 @@ static std::optional<SmallVector<int64_t>> getEltwiseShape(VectorType vec) {
   return eltwiseShape;
 }
 
+// Get contraction sizes for Intel GPU.
+static std::optional<SmallVector<int64_t>>
+getContractionShape(vector::ContractionOp contract) {
+  // TODO: Split shapes for DPAS intrinsics and matmuls lowering to generic
+  //       SIMD/SIMT operations.
+  //       For now, DPAS shapes are compatible with SIMD just more conservative.
+  return SmallVector<int64_t>{8, 16, 16};
+}
+
 // Control vector unrolling shapes.
 static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
   // TODO: Run a separate analysis pass that assigns and propagates
@@ -137,9 +147,8 @@ static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
     if (auto vecType = dyn_cast<VectorType>(op->getResult(0).getType()))
       return getEltwiseShape(vecType);
   }
-  // TODO: Only unroll DPAS.
-  if (isa<vector::ContractionOp>(op))
-    return SmallVector<int64_t>{8, 16, 16};
+  if (auto contract = dyn_cast<vector::ContractionOp>(op))
+    return getContractionShape(contract);
   if (auto readOp = dyn_cast<vector::TransferReadOp>(op))
     return get2DLoadStoreShape(readOp.getVector().getType());
   if (auto writeOp = dyn_cast<vector::TransferReadOp>(op))
@@ -148,7 +157,7 @@ static std::optional<SmallVector<int64_t>> getVectorOpShape(Operation *op) {
   return std::nullopt;
 }
 
-// Transfer data from host to a GPU device.
+// Reshape GPU vector operations into hardware compatible sizes.
 struct GpuVectorTile : public tpp::impl::GpuVectorTileBase<GpuVectorTile> {
   using GpuVectorTileBase::GpuVectorTileBase;
 

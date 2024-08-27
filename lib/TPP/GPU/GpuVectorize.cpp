@@ -90,7 +90,7 @@ struct GpuVectorizeLinalg : public OpInterfaceRewritePattern<linalg::LinalgOp> {
   }
 };
 
-// Transfer data from host to a GPU device.
+// Vectorize operations targeting GPU.
 struct GpuVectorize : public tpp::impl::GpuVectorizeBase<GpuVectorize> {
   using GpuVectorizeBase::GpuVectorizeBase;
 

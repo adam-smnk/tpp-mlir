@@ -31,6 +31,52 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
 
   LogicalResult matchAndRewrite(vector::TransferReadOp readOp,
                                 PatternRewriter &rewriter) const override {
+    if (readOp.hasOutOfBoundsDim())
+      return rewriter.notifyMatchFailure(
+          readOp, "Expects all dimensions to be in-bounds");
+    if (readOp.getMask())
+      return rewriter.notifyMatchFailure(readOp,
+                                         "Masked load is not supported");
+
+    auto srcTy = dyn_cast<MemRefType>(readOp.getShapedType());
+    if (!srcTy)
+      return rewriter.notifyMatchFailure(readOp, "Expects memref source");
+    VectorType vecTy = readOp.getVectorType();
+    unsigned vecRank = vecTy.getRank();
+    if (!(vecRank == 1 || vecRank == 2))
+      return rewriter.notifyMatchFailure(readOp,
+                                         "Expects 1D or 2D vector result");
+
+    SmallVector<int64_t> strides;
+    int64_t offset;
+    if (failed(getStridesAndOffset(srcTy, strides, offset)) ||
+        strides.back() != 1)
+      return rewriter.notifyMatchFailure(
+          readOp, "Source must be contiguous in the innermost dimension");
+
+    AffineMap readMap = readOp.getPermutationMap();
+    if (!readMap.isProjectedPermutation(/*allowZeroInResults=*/false))
+      return rewriter.notifyMatchFailure(readOp, "Unsupported permutation map");
+    unsigned numInputDims = readMap.getNumInputs();
+    for (auto expr : readMap.getResults().take_back(vecRank)) {
+      auto dim = dyn_cast<AffineDimExpr>(expr);
+      if (dim.getPosition() < (numInputDims - vecRank))
+        return rewriter.notifyMatchFailure(
+            readOp, "Only innermost dimensions can be loaded");
+    }
+
+    bool isTransposeLoad = !readMap.isMinorIdentity();
+    Type elementType = vecTy.getElementType();
+    unsigned minTransposeBitWidth = 32;
+    if (isTransposeLoad &&
+        elementType.getIntOrFloatBitWidth() < minTransposeBitWidth)
+      return rewriter.notifyMatchFailure(
+          readOp, "Unsupported data type for tranposition");
+
+    // auto descType = xegpu::TensorDescType::get(vecTy.getShape(),
+    // elementType); auto ndDesc = rewriter.create<xegpu::CreateNdDescOp>(
+    //     loc, descType, readOp.getSource(), offsets);
+
     return success();
   }
 };

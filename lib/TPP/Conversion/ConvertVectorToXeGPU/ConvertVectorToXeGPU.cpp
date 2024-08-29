@@ -79,7 +79,11 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
       return rewriter.notifyMatchFailure(
           readOp, "Unsupported data type for tranposition");
 
-    auto descType = xegpu::TensorDescType::get(vecTy.getShape(), elementType);
+    SmallVector<int64_t> descShape{vecTy.getShape()};
+    // If load is transposed, get the base shape for the tensor descriptor.
+    if (isTransposeLoad)
+      std::reverse(descShape.begin(), descShape.end());
+    auto descType = xegpu::TensorDescType::get(descShape, elementType);
     TypedValue<ShapedType> src = readOp.getSource();
     Operation::operand_range offsets = readOp.getIndices();
     xegpu::CreateNdDescOp ndDesc;

@@ -16,6 +16,8 @@
 #include "mlir/Dialect/XeGPU/IR/XeGPU.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/TypeSwitch.h"
+
 #include <algorithm>
 #include <optional>
 
@@ -30,6 +32,17 @@ namespace tpp {
 
 namespace {
 
+static bool isZeroConstant(Value val) {
+  auto constant = val.getDefiningOp<arith::ConstantOp>();
+  if (!constant)
+    return false;
+
+  return TypeSwitch<Attribute, bool>(constant.getValue())
+      .Case<FloatAttr>([](auto attr) { return attr.getValue().isZero(); })
+      .Case<IntegerAttr>([](auto attr) { return attr.getValue().isZero(); })
+      .Default([](auto attr) { return false; });
+}
+
 struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
   using OpRewritePattern<vector::TransferReadOp>::OpRewritePattern;
 
@@ -37,9 +50,10 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
                                 PatternRewriter &rewriter) const override {
     Location loc = readOp.getLoc();
 
-    if (readOp.hasOutOfBoundsDim())
+    bool isOutOfBounds = readOp.hasOutOfBoundsDim();
+    if (isOutOfBounds && !isZeroConstant(readOp.getPadding()))
       return rewriter.notifyMatchFailure(
-          readOp, "Expects all dimensions to be in-bounds");
+          readOp, "Unsupported non-zero padded out-of-bounds access");
     if (readOp.getMask())
       return rewriter.notifyMatchFailure(readOp,
                                          "Masked load is not supported");
@@ -83,7 +97,10 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
     SmallVector<int64_t> descShape{vecTy.getShape()};
     if (isTransposeLoad)
       std::reverse(descShape.begin(), descShape.end());
-    auto descType = xegpu::TensorDescType::get(descShape, elementType);
+    auto descType = xegpu::TensorDescType::get(
+        descShape, elementType, /*scattered=*/false, /*array_length=*/1,
+        xegpu::MemoryScope::Global,
+        /*boundary_check=*/isOutOfBounds);
 
     xegpu::CreateNdDescOp ndDesc;
     TypedValue<ShapedType> src = readOp.getSource();

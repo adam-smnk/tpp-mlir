@@ -11,7 +11,8 @@ func.func @load_1D_vector(%arg0: memref<32xf32>, %arg1: index) -> vector<8xf32> 
 // CHECK-SAME:  %[[ARG0:.+]]: memref<32xf32>,
 // CHECK-SAME:  %[[ARG1:.+]]: index
 // CHECK:       %[[DESC:.+]] = xegpu.create_nd_tdesc %[[ARG0]][%[[ARG1]]]
-// CHECK-SAME:    memref<32xf32> -> !xegpu.tensor_desc<8xf32
+// CHECK-SAME:    memref<32xf32> -> !xegpu.tensor_desc<8xf32,
+// CHECK-SAME:    boundary_check = false
 // CHECK:       %[[VEC:.+]] = xegpu.load_nd %[[DESC]]{{.*}}-> vector<8xf32>
 // CHECK:       return %[[VEC]]
 
@@ -30,7 +31,28 @@ func.func @load_2D_vector(%arg0: memref<32x64xf32>,
 // CHECK-SAME:  %[[ARG1:.+]]: index,
 // CHECK-SAME:  %[[ARG2:.+]]: index
 // CHECK:       %[[DESC:.+]] = xegpu.create_nd_tdesc %[[ARG0]][%[[ARG1]], %[[ARG2]]]
-// CHECK-SAME:    memref<32x64xf32> -> !xegpu.tensor_desc<8x16xf32
+// CHECK-SAME:    memref<32x64xf32> -> !xegpu.tensor_desc<8x16xf32,
+// CHECK-SAME:    boundary_check = false
+// CHECK:       %[[VEC:.+]] = xegpu.load_nd %[[DESC]]{{.*}}-> vector<8x16xf32>
+// CHECK:       return %[[VEC]]
+
+// -----
+
+func.func @load_zero_pad_out_of_bounds(%arg0: memref<32x64xf32>,
+    %arg1: index, %arg2: index) -> vector<8x16xf32> {
+  %cst = arith.constant 0.0 : f32
+  %0 = vector.transfer_read %arg0[%arg1, %arg2], %cst
+    {in_bounds = [false, true]} : memref<32x64xf32>, vector<8x16xf32>
+  return %0 : vector<8x16xf32>
+}
+
+// CHECK-LABEL: @load_zero_pad_out_of_bounds(
+// CHECK-SAME:  %[[ARG0:.+]]: memref<32x64xf32>,
+// CHECK-SAME:  %[[ARG1:.+]]: index,
+// CHECK-SAME:  %[[ARG2:.+]]: index
+// CHECK:       %[[DESC:.+]] = xegpu.create_nd_tdesc %[[ARG0]][%[[ARG1]], %[[ARG2]]]
+// CHECK-SAME:    memref<32x64xf32> -> !xegpu.tensor_desc<8x16xf32,
+// CHECK-SAME:    boundary_check = true
 // CHECK:       %[[VEC:.+]] = xegpu.load_nd %[[DESC]]{{.*}}-> vector<8x16xf32>
 // CHECK:       return %[[VEC]]
 
@@ -83,16 +105,18 @@ func.func @load_dynamic_source(%arg0: memref<?x?x?xf32>,
 
 // -----
 
-func.func @no_load_out_of_bounds(%arg0: memref<32x64xf32>,
-    %arg1: index, %arg2: index) -> vector<8x16xf32> {
-  %cst = arith.constant 0.0 : f32
+func.func @no_load_out_of_bounds_non_zero_pad(%arg0: memref<32x64xf32>,
+    %arg1: index, %arg2: index, %pad: f32) -> (vector<8x16xf32>, vector<8x16xf32>) {
+  %cst = arith.constant 1.0 : f32
   %0 = vector.transfer_read %arg0[%arg1, %arg2], %cst
     {in_bounds = [true, false]} : memref<32x64xf32>, vector<8x16xf32>
-  return %0 : vector<8x16xf32>
+  %1 = vector.transfer_read %arg0[%arg2, %arg1], %pad
+    {in_bounds = [false, true]} : memref<32x64xf32>, vector<8x16xf32>
+  return %0, %1 : vector<8x16xf32>, vector<8x16xf32>
 }
 
-// CHECK-LABEL: @no_load_out_of_bounds(
-// CHECK:       vector.transfer_read
+// CHECK-LABEL:   @no_load_out_of_bounds_non_zero_pad(
+// CHECK-COUNT-2: vector.transfer_read
 
 // -----
 

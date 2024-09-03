@@ -195,6 +195,36 @@ struct TransferWriteLowering
 
   LogicalResult matchAndRewrite(vector::TransferWriteOp writeOp,
                                 PatternRewriter &rewriter) const override {
+    Location loc = writeOp.getLoc();
+
+    if (failed(transferPreconditions(rewriter, writeOp)))
+      return failure();
+
+    if (writeOp.hasOutOfBoundsDim())
+      return rewriter.notifyMatchFailure(writeOp,
+                                         "Unsupported out-of-bounds write");
+    AffineMap map = writeOp.getPermutationMap();
+    if (!map.isMinorIdentity())
+      return rewriter.notifyMatchFailure(writeOp, "Expects identity map");
+
+    VectorType vecTy = writeOp.getVectorType();
+    auto descType = xegpu::TensorDescType::get(
+        vecTy.getShape(), vecTy.getElementType(),
+        /*scattered=*/false, /*array_length=*/1, xegpu::MemoryScope::Global,
+        /*boundary_check=*/false);
+    xegpu::CreateNdDescOp ndDesc = createNdDescriptor(
+        rewriter, loc, descType,
+        dyn_cast<TypedValue<MemRefType>>(writeOp.getSource()),
+        writeOp.getIndices());
+
+    // By default, no specific caching policy is assigned.
+    xegpu::CachePolicyAttr hint = nullptr;
+    auto storeOp =
+        rewriter.create<xegpu::StoreNdOp>(loc, writeOp.getVector(), ndDesc,
+                                          /*l1_hint=*/hint,
+                                          /*l2_hint=*/hint, /*l3_hint=*/hint);
+    rewriter.replaceOp(writeOp, storeOp);
+
     return success();
   }
 };

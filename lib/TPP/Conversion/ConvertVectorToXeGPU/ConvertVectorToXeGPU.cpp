@@ -45,6 +45,10 @@ static bool isZeroConstant(Value val) {
 
 static LogicalResult transferPreconditions(PatternRewriter &rewriter,
                                            VectorTransferOpInterface xferOp) {
+  if (xferOp.getMask())
+    return rewriter.notifyMatchFailure(xferOp,
+                                       "Masked transfer is not supported");
+
   auto srcTy = dyn_cast<MemRefType>(xferOp.getShapedType());
   if (!srcTy)
     return rewriter.notifyMatchFailure(xferOp, "Expects memref source");
@@ -136,16 +140,13 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
                                 PatternRewriter &rewriter) const override {
     Location loc = readOp.getLoc();
 
+    if (failed(transferPreconditions(rewriter, readOp)))
+      return failure();
+
     bool isOutOfBounds = readOp.hasOutOfBoundsDim();
     if (isOutOfBounds && !isZeroConstant(readOp.getPadding()))
       return rewriter.notifyMatchFailure(
           readOp, "Unsupported non-zero padded out-of-bounds access");
-    if (readOp.getMask())
-      return rewriter.notifyMatchFailure(readOp,
-                                         "Masked load is not supported");
-
-    if (failed(transferPreconditions(rewriter, readOp)))
-      return failure();
 
     AffineMap readMap = readOp.getPermutationMap();
     bool isTransposeLoad = !readMap.isMinorIdentity();

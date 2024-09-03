@@ -43,6 +43,92 @@ static bool isZeroConstant(Value val) {
       .Default([](auto attr) { return false; });
 }
 
+static LogicalResult transferPreconditions(PatternRewriter &rewriter,
+                                           VectorTransferOpInterface xferOp) {
+  auto srcTy = dyn_cast<MemRefType>(xferOp.getShapedType());
+  if (!srcTy)
+    return rewriter.notifyMatchFailure(xferOp, "Expects memref source");
+  VectorType vecTy = xferOp.getVectorType();
+  unsigned vecRank = vecTy.getRank();
+  if (!(vecRank == 1 || vecRank == 2))
+    return rewriter.notifyMatchFailure(xferOp,
+                                       "Expects 1D or 2D vector result");
+
+  SmallVector<int64_t> strides;
+  int64_t offset;
+  if (failed(getStridesAndOffset(srcTy, strides, offset)) ||
+      strides.back() != 1)
+    return rewriter.notifyMatchFailure(
+        xferOp, "Buffer must be contiguous in the innermost dimension");
+
+  AffineMap map = xferOp.getPermutationMap();
+  if (!map.isProjectedPermutation(/*allowZeroInResults=*/false))
+    return rewriter.notifyMatchFailure(xferOp, "Unsupported permutation map");
+  unsigned numInputDims = map.getNumInputs();
+  for (auto expr : map.getResults().take_back(vecRank)) {
+    auto dim = dyn_cast<AffineDimExpr>(expr);
+    if (dim.getPosition() < (numInputDims - vecRank))
+      return rewriter.notifyMatchFailure(
+          xferOp, "Only innermost dimensions can be accessed");
+  }
+
+  return success();
+}
+
+static xegpu::CreateNdDescOp
+createNdDescriptor(PatternRewriter &rewriter, Location loc,
+                   xegpu::TensorDescType descType, TypedValue<MemRefType> src,
+                   Operation::operand_range offsets) {
+  MemRefType srcTy = src.getType();
+  auto [strides, offset] = getStridesAndOffset(srcTy);
+
+  xegpu::CreateNdDescOp ndDesc;
+  if (srcTy.hasStaticShape()) {
+    ndDesc = rewriter.create<xegpu::CreateNdDescOp>(loc, descType, src,
+                                                    getAsOpFoldResult(offsets));
+  } else {
+    SmallVector<Value> sourceDims;
+    unsigned srcRank = srcTy.getRank();
+    for (unsigned i = 0; i < srcRank; ++i)
+      sourceDims.push_back(rewriter.create<memref::DimOp>(loc, src, i));
+
+    SmallVector<int64_t> constOffsets;
+    SmallVector<Value> dynOffsets;
+    for (auto offset : offsets) {
+      std::optional<int64_t> staticVal = getConstantIntValue(offset);
+      if (!staticVal)
+        dynOffsets.push_back(offset);
+      constOffsets.push_back(staticVal ? *staticVal : ShapedType::kDynamic);
+    }
+
+    SmallVector<Value> dynShapes;
+    for (auto [idx, shape] : llvm::enumerate(srcTy.getShape())) {
+      if (shape == ShapedType::kDynamic)
+        dynShapes.push_back(sourceDims[idx]);
+    }
+
+    // Compute strides in reverse order.
+    SmallVector<Value> dynStrides;
+    Value accStride = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    // Last stride is guaranteed to be static and unit.
+    for (int i = static_cast<int>(strides.size()) - 2; i >= 0; --i) {
+      accStride =
+          rewriter.create<arith::MulIOp>(loc, accStride, sourceDims[i + 1]);
+      if (strides[i] == ShapedType::kDynamic)
+        dynStrides.push_back(accStride);
+    }
+    std::reverse(dynStrides.begin(), dynStrides.end());
+
+    ndDesc = rewriter.create<xegpu::CreateNdDescOp>(
+        loc, descType, src, dynOffsets, dynShapes, dynStrides,
+        DenseI64ArrayAttr::get(rewriter.getContext(), constOffsets),
+        DenseI64ArrayAttr::get(rewriter.getContext(), srcTy.getShape()),
+        DenseI64ArrayAttr::get(rewriter.getContext(), strides));
+  }
+
+  return ndDesc;
+}
+
 struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
   using OpRewritePattern<vector::TransferReadOp>::OpRewritePattern;
 
@@ -58,34 +144,13 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
       return rewriter.notifyMatchFailure(readOp,
                                          "Masked load is not supported");
 
-    auto srcTy = dyn_cast<MemRefType>(readOp.getShapedType());
-    if (!srcTy)
-      return rewriter.notifyMatchFailure(readOp, "Expects memref source");
-    VectorType vecTy = readOp.getVectorType();
-    unsigned vecRank = vecTy.getRank();
-    if (!(vecRank == 1 || vecRank == 2))
-      return rewriter.notifyMatchFailure(readOp,
-                                         "Expects 1D or 2D vector result");
-
-    SmallVector<int64_t> strides;
-    int64_t offset;
-    if (failed(getStridesAndOffset(srcTy, strides, offset)) ||
-        strides.back() != 1)
-      return rewriter.notifyMatchFailure(
-          readOp, "Source must be contiguous in the innermost dimension");
+    if (failed(transferPreconditions(rewriter, readOp)))
+      return failure();
 
     AffineMap readMap = readOp.getPermutationMap();
-    if (!readMap.isProjectedPermutation(/*allowZeroInResults=*/false))
-      return rewriter.notifyMatchFailure(readOp, "Unsupported permutation map");
-    unsigned numInputDims = readMap.getNumInputs();
-    for (auto expr : readMap.getResults().take_back(vecRank)) {
-      auto dim = dyn_cast<AffineDimExpr>(expr);
-      if (dim.getPosition() < (numInputDims - vecRank))
-        return rewriter.notifyMatchFailure(
-            readOp, "Only innermost dimensions can be loaded");
-    }
-
     bool isTransposeLoad = !readMap.isMinorIdentity();
+
+    VectorType vecTy = readOp.getVectorType();
     Type elementType = vecTy.getElementType();
     unsigned minTransposeBitWidth = 32;
     if (isTransposeLoad &&
@@ -102,53 +167,10 @@ struct TransferReadLowering : public OpRewritePattern<vector::TransferReadOp> {
         xegpu::MemoryScope::Global,
         /*boundary_check=*/isOutOfBounds);
 
-    xegpu::CreateNdDescOp ndDesc;
-    TypedValue<ShapedType> src = readOp.getSource();
-    Operation::operand_range offsets = readOp.getIndices();
-    if (srcTy.hasStaticShape()) {
-      ndDesc = rewriter.create<xegpu::CreateNdDescOp>(
-          loc, descType, dyn_cast<TypedValue<MemRefType>>(src),
-          getAsOpFoldResult(offsets));
-    } else {
-      SmallVector<Value> sourceDims;
-      unsigned srcRank = srcTy.getRank();
-      for (unsigned i = 0; i < srcRank; ++i)
-        sourceDims.push_back(rewriter.create<memref::DimOp>(loc, src, i));
-
-      SmallVector<int64_t> constOffsets;
-      SmallVector<Value> dynOffsets;
-      for (auto offset : offsets) {
-        std::optional<int64_t> staticVal = getConstantIntValue(offset);
-        if (!staticVal)
-          dynOffsets.push_back(offset);
-        constOffsets.push_back(staticVal ? *staticVal : ShapedType::kDynamic);
-      }
-
-      SmallVector<Value> dynShapes;
-      for (auto [idx, shape] : llvm::enumerate(srcTy.getShape())) {
-        if (shape == ShapedType::kDynamic)
-          dynShapes.push_back(sourceDims[idx]);
-      }
-
-      // Compute strides in reverse order.
-      SmallVector<Value> dynStrides;
-      Value accStride = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-      // Last stride is guaranteed to be static and unit.
-      for (int i = static_cast<int>(strides.size()) - 2; i >= 0; --i) {
-        accStride =
-            rewriter.create<arith::MulIOp>(loc, accStride, sourceDims[i + 1]);
-        if (strides[i] == ShapedType::kDynamic)
-          dynStrides.push_back(accStride);
-      }
-      std::reverse(dynStrides.begin(), dynStrides.end());
-
-      ndDesc = rewriter.create<xegpu::CreateNdDescOp>(
-          loc, descType, dyn_cast<TypedValue<MemRefType>>(src), dynOffsets,
-          dynShapes, dynStrides,
-          DenseI64ArrayAttr::get(rewriter.getContext(), constOffsets),
-          DenseI64ArrayAttr::get(rewriter.getContext(), srcTy.getShape()),
-          DenseI64ArrayAttr::get(rewriter.getContext(), strides));
-    }
+    xegpu::CreateNdDescOp ndDesc =
+        createNdDescriptor(rewriter, loc, descType,
+                           dyn_cast<TypedValue<MemRefType>>(readOp.getSource()),
+                           readOp.getIndices());
 
     auto transposeAttr = !isTransposeLoad
                              ? nullptr

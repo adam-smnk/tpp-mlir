@@ -446,34 +446,39 @@ static FailureOr<scf::SCFTileAndFuseResult> fuseWithEltwise(
   return *tileAndFuseResult;
 }
 
+static std::optional<int64_t> getTileFromDLTI(ModuleOp moduleOp) {
+  if (!moduleOp)
+    return std::nullopt;
+  TargetSystemSpecInterface sysSpec = moduleOp.getTargetSystemSpec();
+  if (!sysSpec)
+    return std::nullopt;
+  auto deviceId = StringAttr::get(moduleOp->getContext(), "CPU");
+  auto deviceSpec = sysSpec.getDeviceSpecForDeviceID(deviceId);
+  if (!deviceSpec)
+    return std::nullopt;
+  auto tileSizeId = StringAttr::get(moduleOp->getContext(), "tile_size");
+  DataLayoutEntryInterface entry =
+      (*deviceSpec).getSpecForIdentifier(tileSizeId);
+  if (!entry)
+    return std::nullopt;
+  Attribute value = entry.getValue();
+  if (auto intAttr = llvm::dyn_cast<IntegerAttr>(value))
+    return intAttr.getInt();
+  // TODO: might want to print a warning if tile_size exists as a key but the
+  //       associated attribute has an unexpected type.
+
+  return std::nullopt;
+};
+
 // Trivial tile selection. If the dimension is statically known, it perfectly
 // divides the tile, and we have enough iterations return a default of 32.
 static int64_t getTileForDim(linalg::LinalgOp linalgOp, unsigned dim) {
   int64_t tile = 32;
 
   // Check if a tile size hint is associated to the IR via DLTI.
-  auto deriveFromDLTI = [&](ModuleOp moduleOp) {
-    if (!moduleOp)
-      return;
-    TargetSystemSpecInterface sysSpec = moduleOp.getTargetSystemSpec();
-    if (!sysSpec)
-      return;
-    auto deviceId = StringAttr::get(linalgOp->getContext(), "CPU");
-    auto deviceSpec = sysSpec.getDeviceSpecForDeviceID(deviceId);
-    if (!deviceSpec)
-      return;
-    auto tileSizeId = StringAttr::get(linalgOp->getContext(), "tile_size");
-    DataLayoutEntryInterface entry =
-        (*deviceSpec).getSpecForIdentifier(tileSizeId);
-    if (!entry)
-      return;
-    Attribute value = entry.getValue();
-    if (auto intAttr = llvm::dyn_cast<IntegerAttr>(value))
-      tile = intAttr.getInt();
-    // TODO: might want to print a warning if tile_size exists as a key but the
-    //       associated attribute has an unexpected type.
-  };
-  deriveFromDLTI(linalgOp->getParentOfType<mlir::ModuleOp>());
+  if (auto dltiTile =
+          getTileFromDLTI(linalgOp->getParentOfType<mlir::ModuleOp>()))
+    tile = *dltiTile;
 
   SmallVector<int64_t, 4> loopsRange = linalgOp.getStaticLoopRanges();
   if (loopsRange[dim] == ShapedType::kDynamic)
@@ -529,10 +534,12 @@ getDefaultTileSizesForMatmulLikeOp(linalg::LinalgOp linalgOp) {
 static FailureOr<SmallVector<int64_t>>
 getDefaultTileSizes(linalg::LinalgOp linalgOp,
                     ArrayRef<int64_t> userProvidedTiles) {
-  // The user-provided tiles are considered from the outer
-  // most loop. If not enough tiles are provided we pad with
-  // zeros.
-  if (!userProvidedTiles.empty()) {
+  auto dltiTile = getTileFromDLTI(linalgOp->getParentOfType<mlir::ModuleOp>());
+  // Skip manual user options if not available or there is DLTI specification.
+  if (!userProvidedTiles.empty() && !dltiTile) {
+    // The user-provided tiles are considered from the outer
+    // most loop. If not enough tiles are provided we pad with
+    // zeros.
     size_t numParallelLoops = linalgOp.getNumParallelLoops();
     size_t nonZeros = 0;
     for (auto tile : userProvidedTiles)
